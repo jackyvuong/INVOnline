@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "vnD9Ho7LoU0=",
+  "dgSpecHash": "yeGFsJDyXcs=",
   "success": true,
-  "projectFilePath": "E:\\Core\\QuanLyTonKho\\inventory-online\\api\\Inventory.Api.csproj",
+  "projectFilePath": "E:\\Core\\QuanLyTonKho\\inventoryonline\\api\\Inventory.Api.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\6d18720be55e49dab20593d906c43048\\nuget\\dapper\\2.1.79\\dapper.2.1.79.nupkg.sha512",
     "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\6d18720be55e49dab20593d906c43048\\nuget\\google.apis\\1.75.0\\google.apis.1.75.0.nupkg.sha512",
