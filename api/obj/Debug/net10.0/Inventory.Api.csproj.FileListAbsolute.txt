@@ -95,3 +95,9 @@ E:\Core\QuanLyTonKho\inventoryonline\api\obj\Debug\net10.0\refint\Inventory.Api.
 E:\Core\QuanLyTonKho\inventoryonline\api\obj\Debug\net10.0\Inventory.Api.pdb
 E:\Core\QuanLyTonKho\inventoryonline\api\obj\Debug\net10.0\Inventory.Api.genruntimeconfig.cache
 E:\Core\QuanLyTonKho\inventoryonline\api\obj\Debug\net10.0\ref\Inventory.Api.dll
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\web.config
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\appsettings.Development.json
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\appsettings.json
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\Inventory.Api.deps.json
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\Inventory.Api.runtimeconfig.json
+E:\Core\QuanLyTonKho\inventoryonline\api\bin\Debug\net10.0\publish-test\Inventory.Api.staticwebassets.endpoints.json

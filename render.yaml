@@ -1,0 +1,19 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+services:
+  # Frontend (Static Site)
+  - type: web
+    name: invonline
+    runtime: static
+    rootDir: web
+    buildCommand: npm install && npm run build:render
+    staticPublishPath: ./dist
+    # SPA routing: dùng web/public/_redirects (đừng rewrite /* ở đây — có thể gây lỗi assets)
+
+  # Backend (Docker) — tùy chọn, cấu hình qua Dashboard nếu đã tạo tay
+  # - type: web
+  #   name: be-inventory
+  #   runtime: docker
+  #   rootDir: api
+  #   dockerfilePath: ./Dockerfile
+  #   dockerContext: .
+  #   healthCheckPath: /health
