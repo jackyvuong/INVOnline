@@ -96,5 +96,21 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/health/cors", () => Results.Ok(new { origins = corsOrigins }));
+app.MapGet("/health/db", async (DbConnectionFactory db) =>
+{
+    try
+    {
+        await using var conn = db.Create();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1";
+        await cmd.ExecuteScalarAsync();
+        return Results.Ok(new { status = "ok", database = "connected" });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "error", message = ex.Message }, statusCode: 503);
+    }
+});
 
 app.Run();
