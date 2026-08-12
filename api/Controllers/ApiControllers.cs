@@ -12,7 +12,11 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController(GoogleAuthService googleAuth, JwtTokenService jwt, IConfiguration config) : ControllerBase
+public class AuthController(
+    GoogleAuthService googleAuth,
+    JwtTokenService jwt,
+    IConfiguration config,
+    ILogger<AuthController> logger) : ControllerBase
 {
     public record GoogleLoginRequest(string IdToken);
 
@@ -37,6 +41,11 @@ public class AuthController(GoogleAuthService googleAuth, JwtTokenService jwt, I
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Google login failed");
+            return StatusCode(500, new { message = "Lỗi server khi đăng nhập. Kiểm tra kết nối database." });
         }
     }
 

@@ -19,8 +19,13 @@ builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SettingsService>();
 
 builder.Services.AddControllers();
-var corsOrigins = builder.Configuration["Cors:Origins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-    ?? ["http://localhost:5173"];
+var corsOrigins = (builder.Configuration["Cors:Origins"] ?? "http://localhost:5173")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .Select(o => o.Trim())
+    .Where(o => o.Length > 0)
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
 builder.Services.AddCors(o =>
 {
     o.AddDefaultPolicy(p =>
@@ -40,7 +45,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
-                // Preflight OPTIONS must not go through JWT validation
                 if (HttpMethods.IsOptions(context.Request.Method))
                     context.NoResult();
                 return Task.CompletedTask;
@@ -63,11 +67,34 @@ var app = builder.Build();
 
 app.Logger.LogInformation("CORS origins: {Origins}", string.Join(", ", corsOrigins));
 
+// CORS first — always answer preflight and attach headers (including on errors)
+app.Use(async (ctx, next) =>
+{
+    var origin = ctx.Request.Headers.Origin.ToString();
+    if (!string.IsNullOrEmpty(origin) &&
+        corsOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase)))
+    {
+        ctx.Response.Headers["Access-Control-Allow-Origin"] = origin;
+        ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        ctx.Response.Headers["Vary"] = "Origin";
+    }
+
+    if (HttpMethods.IsOptions(ctx.Request.Method))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+
+    await next();
+});
+
 app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health/cors", () => Results.Ok(new { origins = corsOrigins }));
 
 app.Run();
