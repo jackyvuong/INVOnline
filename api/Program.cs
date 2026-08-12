@@ -19,13 +19,16 @@ builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SettingsService>();
 
 builder.Services.AddControllers();
+var corsOrigins = builder.Configuration["Cors:Origins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    ?? ["http://localhost:5173"];
 builder.Services.AddCors(o =>
 {
     o.AddDefaultPolicy(p =>
     {
-        var origins = builder.Configuration["Cors:Origins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            ?? ["http://localhost:5173"];
-        p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        p.WithOrigins(corsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .SetPreflightMaxAge(TimeSpan.FromHours(1));
     });
 });
 
@@ -33,6 +36,16 @@ var jwtSecret = builder.Configuration["Jwt:Secret"] ?? throw new InvalidOperatio
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
+        o.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                // Preflight OPTIONS must not go through JWT validation
+                if (HttpMethods.IsOptions(context.Request.Method))
+                    context.NoResult();
+                return Task.CompletedTask;
+            },
+        };
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -48,6 +61,9 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.Logger.LogInformation("CORS origins: {Origins}", string.Join(", ", corsOrigins));
+
+app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();

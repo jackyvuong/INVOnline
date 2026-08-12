@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:render": "npm run build && node scripts/verify-dist.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },
