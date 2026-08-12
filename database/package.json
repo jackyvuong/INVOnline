@@ -4,7 +4,8 @@
   "description": "Schema versioned SQL cho **inventory-online**. Chạy trên Supabase hoặc PostgreSQL local.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "import-legacy": "node import-legacy.js",
+    "import-legacy:dry": "node import-legacy.js --dry-run"
   },
   "keywords": [],
   "author": "",

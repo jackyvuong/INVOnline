@@ -16,6 +16,7 @@ builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ExportSlipService>();
 builder.Services.AddScoped<ImportSlipService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<LegacyImportService>();
 builder.Services.AddScoped<SettingsService>();
 
 builder.Services.AddControllers();

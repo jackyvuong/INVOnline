@@ -10,12 +10,11 @@ inventory/ (legacy)
     legacy-backup-YYYY-MM-DD.json
            |
            v
-tools/inventory-migration/     [PHASE 11 — chưa implement]
-    --dry-run  → phân tích + migration-report.json
-    --execute  → ghi PostgreSQL + verify
+    UI: Cài đặt → Import JSON legacy
+    CLI: database/import-legacy.js
            |
            v
-inventory-online PostgreSQL (Supabase)
+inventoryonline PostgreSQL (Supabase)
 ```
 
 ## Backup bắt buộc (STEP 1)
@@ -35,6 +34,15 @@ Lưu thành: `legacy-backup-YYYY-MM-DD.json`
 
 ## Import legacy data (STEP 4)
 
+**Hai cách (đã implement):**
+
+| Cách | Mô tả |
+|------|--------|
+| **UI** | Đăng nhập → Cài đặt → Chọn file JSON legacy → Import |
+| **CLI** | `database/import-legacy.js --file legacy-backup.json` |
+
+Cả hai dùng cùng định dạng `Storage.exportAll()` / `latest.json`.
+
 **Thứ tự insert (FK-safe):**
 
 1. categories
@@ -42,9 +50,9 @@ Lưu thành: `legacy-backup-YYYY-MM-DD.json`
 3. transactions
 4. export_slips (items + out/return transaction IDs JSONB)
 5. import_slips (items + in/return transaction IDs JSONB)
-6. Verify `products.stock` vs sum transactions
+6. Reset PostgreSQL sequences
 
-## Validation (trước `--execute`)
+## Validation (trước import)
 
 - JSON schema: required arrays `products`, `transactions`
 - Duplicate `legacy_id` / `code` per entity
@@ -85,18 +93,13 @@ Output: `migration-report.json` (counts, mismatches, skipped, failed).
 4. Legacy app chỉ đọc — không ghi IndexedDB nghiệp vụ
 5. Giữ source `inventory/` trên branch `legacy-indexeddb`
 
-## Tool CLI (planned)
+## Tool CLI
 
-```bash
-dotnet run --project tools/inventory-migration -- \
-  --input ../legacy-backup.json \
-  --connection "$DATABASE_URL" \
-  --dry-run
-
-dotnet run --project tools/inventory-migration -- \
-  --input ../legacy-backup.json \
-  --connection "$DATABASE_URL" \
-  --execute
+```powershell
+cd inventoryonline/database
+$env:DATABASE_URL = "postgresql://..."
+node import-legacy.js --file ../../inventory/Database/latest.json --dry-run
+node import-legacy.js --file ../../inventory/Database/latest.json --email admin@example.com
 ```
 
 ## Tài liệu liên quan

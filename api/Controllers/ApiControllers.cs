@@ -324,7 +324,7 @@ public class SettingsController(SettingsService settings) : ControllerBase
     public async Task<IActionResult> Import([FromBody] System.Text.Json.JsonElement payload)
     {
         var result = await settings.ImportAsync(payload, User.GetUserEmail());
-        return result.Ok ? Ok(new { ok = true }) : BadRequest(result);
+        return result.Ok ? Ok(new { ok = true, summary = result.Data }) : BadRequest(result);
     }
 
     [HttpPost("clear")]

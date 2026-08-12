@@ -70,5 +70,25 @@ VALUES ('your@gmail.com', 'your@gmail.com', 'Tên hiển thị', true);
 
 (`google_sub` tạm = email; lần login Google đầu tiên sẽ cập nhật thành Google ID thật.)
 
+## Import dữ liệu legacy (lần đầu chuyển hệ thống)
 
-Xem [docs/MIGRATION.md](../docs/MIGRATION.md) — tool PHASE 11.
+File nguồn: export từ app cũ `inventory/` (Cài đặt → Export JSON) hoặc `inventory/Database/latest.json`.
+
+### Cách 1 — Qua giao diện (khuyên dùng)
+
+1. Deploy API + FE, đăng nhập admin.
+2. Vào **Cài đặt** → **Chọn file JSON legacy** → xác nhận import.
+3. Hệ thống ghi đè categories, products, transactions, phiếu xuất/nhập.
+
+### Cách 2 — CLI (trước khi có FE / script một lần)
+
+```powershell
+cd inventoryonline/database
+$env:DATABASE_URL = "postgresql://postgres.PROJECT:PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+node import-legacy.js --file ../../inventory/Database/latest.json --dry-run
+node import-legacy.js --file ../../inventory/Database/latest.json --email admin@example.com
+```
+
+`--dry-run` chỉ kiểm tra file, không ghi DB.
+
+Xem thêm [docs/MIGRATION.md](../docs/MIGRATION.md).
