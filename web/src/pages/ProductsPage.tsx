@@ -44,7 +44,7 @@ export default function ProductsPage() {
     setEditing(product);
     setForm(product
       ? { code: product.code, name: product.name, category: product.category, unit: product.unit, brand: product.brand || '', description: product.description || '', note: product.note || '', warningStock: product.warningStock }
-      : { code: '', name: '', category: categories[0]?.name || '', unit: '', brand: '', description: '', note: '', warningStock: 10 });
+      : { code: '', name: '', category: '', unit: '', brand: '', description: '', note: '', warningStock: 10 });
     setErrors({});
     setOpen(true);
   };
