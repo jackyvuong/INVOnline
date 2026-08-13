@@ -1,4 +1,23 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Inventory.Api.Services;
+
 namespace Inventory.Api.Models;
+
+public class LegacyDateTimeOffsetConverter : JsonConverter<DateTimeOffset>
+{
+    public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+            return ServiceHelpers.ParseLegacyDateTime(reader.GetString() ?? "");
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var ms))
+            return DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return reader.GetDateTimeOffset().ToUniversalTime();
+    }
+
+    public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(ServiceHelpers.FormatLegacyDateTime(value));
+}
 
 public class Category
 {
@@ -57,6 +76,7 @@ public class ExportSlip
     public long Id { get; set; }
     public int LegacyId { get; set; }
     public string Code { get; set; } = "";
+    [JsonConverter(typeof(LegacyDateTimeOffsetConverter))]
     public DateTimeOffset SlipDate { get; set; }
     public string Recipient { get; set; } = "";
     public string Note { get; set; } = "";
@@ -75,6 +95,7 @@ public class ImportSlip
     public long Id { get; set; }
     public int LegacyId { get; set; }
     public string Code { get; set; } = "";
+    [JsonConverter(typeof(LegacyDateTimeOffsetConverter))]
     public DateTimeOffset SlipDate { get; set; }
     public string Supplier { get; set; } = "";
     public string Note { get; set; } = "";

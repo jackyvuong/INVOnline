@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, apiPaged, downloadCsv, nowDateTime } from '../api/client';
+import { api, apiPaged, downloadCsv, nowDateTime, toApiDateTime } from '../api/client';
 import { SlipStatusBadge } from '../components/Badge';
 import { useConfirm } from '../components/ConfirmProvider';
 import DataTable from '../components/DataTable';
@@ -175,7 +175,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   };
 
   const buildPayload = () => ({
-    slipDate: form.slipDate,
+    slipDate: toApiDateTime(form.slipDate),
     recipient: form.recipient,
     supplier: form.supplier,
     note: form.note,
@@ -186,6 +186,10 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
 
   const save = async () => {
     const payload = buildPayload();
+    if (payload.items.length === 0) {
+      notify.error('Phiếu phải có ít nhất một sản phẩm. Bấm "+ Thêm dòng" rồi chọn sản phẩm.');
+      return;
+    }
     try {
       if (editing && !viewOnly) await api(`${config.base}/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
       else if (!editing) await api(config.base, { method: 'POST', body: JSON.stringify(payload) });

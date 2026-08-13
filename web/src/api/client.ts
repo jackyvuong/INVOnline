@@ -28,7 +28,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error('Unauthorized');
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
+    const err = await res.json().catch(() => ({ message: res.statusText })) as {
+      message?: string;
+      title?: string;
+      errors?: Record<string, string | string[]>;
+    };
+    if (!err.message && err.errors) {
+      const first = Object.values(err.errors).flat()[0];
+      err.message = String(first || err.title || res.statusText);
+    }
     throw err;
   }
   if (res.status === 204) return undefined as T;
@@ -106,4 +114,11 @@ export function nowDateTime() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Convert "YYYY-MM-DD HH:mm" to ISO so ASP.NET binds DateTimeOffset. */
+export function toApiDateTime(value: string) {
+  const s = String(value || '').trim().replace(' ', 'T');
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return `${s}:00`;
+  return s;
 }
