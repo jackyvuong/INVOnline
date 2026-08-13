@@ -21,7 +21,7 @@ public class ProductService(DbConnectionFactory db)
     {
         await using var conn = db.Create();
         return await conn.QueryAsync(
-            @"SELECT id AS id, code AS code, name AS name, category_name AS category, unit AS unit,
+            $@"SELECT id AS id, legacy_id AS {PaginationHelper.Alias("legacyId")}, code AS code, name AS name, category_name AS category, unit AS unit,
               brand AS brand, stock AS stock
               FROM products ORDER BY code");
     }

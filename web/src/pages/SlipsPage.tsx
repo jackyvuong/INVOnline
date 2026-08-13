@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, downloadCsv, nowDateTime } from '../api/client';
+import { api, apiPaged, downloadCsv, nowDateTime } from '../api/client';
 import { SlipStatusBadge } from '../components/Badge';
 import { useConfirm } from '../components/ConfirmProvider';
 import DataTable from '../components/DataTable';
@@ -19,7 +19,7 @@ type Slip = {
   recipient?: string; supplier?: string;
   note: string; status: string; items: SlipItem[];
 };
-type Product = { id: number; code: string; name: string; brand: string; unit: string; stock: number };
+type Product = { id: number; legacyId?: number; code: string; name: string; brand: string; unit: string; stock: number };
 
 type SlipConfig = {
   type: 'export' | 'import';
@@ -76,13 +76,13 @@ const IMPORT_CONFIG: SlipConfig = {
 };
 
 
-function defaultForm(products: Product[]) {
+function defaultForm() {
   return {
     slipDate: nowDateTime(),
     recipient: '',
     supplier: '',
     note: '',
-    items: [{ productId: products[0]?.id || 0, quantity: 1, note: '' }] as SlipItem[],
+    items: [] as SlipItem[],
   };
 }
 
@@ -93,7 +93,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const [open, setOpen] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [editing, setEditing] = useState<Slip | null>(null);
-  const [form, setForm] = useState(defaultForm([]));
+  const [form, setForm] = useState(defaultForm());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [filters, setFilters] = useState({ status: '', dateFrom: '', dateTo: '' });
 
@@ -109,23 +109,41 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
     filters: apiFilters,
   });
 
+  const loadProducts = () =>
+    apiPaged<Product>('/products', { page: 1, pageSize: 50000 }).then((r) => setProducts(r.items));
+
   useEffect(() => {
-    api<Product[]>('/products/options').then(setProducts);
+    loadProducts();
   }, []);
 
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
+  const resolveProductId = (rawId: number) => {
+    if (!rawId) return 0;
+    if (productMap.has(rawId)) return rawId;
+    const byLegacy = products.find((p) => p.legacyId === rawId);
+    return byLegacy?.id || 0;
+  };
+
   const parseItems = (items: unknown): SlipItem[] => {
-    if (Array.isArray(items)) return items as SlipItem[];
-    if (typeof items === 'string') {
-      try { return JSON.parse(items) as SlipItem[]; } catch { return []; }
+    let raw: unknown[] = [];
+    if (Array.isArray(items)) raw = items;
+    else if (typeof items === 'string') {
+      try { raw = JSON.parse(items) as unknown[]; } catch { return []; }
     }
-    return [];
+    return raw.map((row) => {
+      const r = (row || {}) as Record<string, unknown>;
+      return {
+        productId: Number(r.productId ?? r.ProductId ?? 0),
+        quantity: Number(r.quantity ?? r.Quantity ?? 0),
+        note: String(r.note ?? r.Note ?? ''),
+      };
+    }).filter((i) => i.quantity > 0);
   };
 
   const reloadAll = () => {
     list.reload();
-    api<Product[]>('/products/options').then(setProducts);
+    loadProducts();
   };
 
   const canEdit = !viewOnly && (!editing || editing.status === 'PROCESSING');
@@ -133,7 +151,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const openCreate = () => {
     setEditing(null);
     setViewOnly(false);
-    setForm(defaultForm(products));
+    setForm(defaultForm());
     setErrors({});
     setOpen(true);
   };
@@ -141,13 +159,16 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const openSlip = (s: Slip & { party?: string }, readonly: boolean) => {
     setEditing(s);
     setViewOnly(readonly);
-    const items = parseItems(s.items);
+    const items = parseItems(s.items).map((i) => ({
+      ...i,
+      productId: resolveProductId(i.productId) || i.productId,
+    }));
     setForm({
       slipDate: String(s.slipDate).slice(0, 16).replace('T', ' '),
       recipient: s.recipient || '',
       supplier: s.supplier || '',
       note: s.note || '',
-      items: items.length ? items.map((i) => ({ ...i })) : [{ productId: products[0]?.id || 0, quantity: 1, note: '' }],
+      items: items.length ? items.map((i) => ({ ...i })) : [],
     });
     setErrors({});
     setOpen(true);
@@ -158,7 +179,9 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
     recipient: form.recipient,
     supplier: form.supplier,
     note: form.note,
-    items: form.items.filter((i) => i.productId && i.quantity > 0),
+    items: form.items
+      .map((i) => ({ ...i, productId: resolveProductId(i.productId) || i.productId }))
+      .filter((i) => i.productId && i.quantity > 0),
   });
 
   const save = async () => {
@@ -237,13 +260,13 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   };
 
   const exportSlipCsv = (s: Slip) => {
-    const items = s.items || [];
+    const items = parseItems(s.items);
     if (items.length === 0) {
       notify.error('Phiếu không có sản phẩm để xuất.');
       return;
     }
     const csvRows = items.map((item) => {
-      const p = productMap.get(item.productId);
+      const p = productMap.get(resolveProductId(item.productId) || item.productId);
       return {
         name: p?.name || '(Đã xóa)',
         code: p?.code || '',
@@ -270,7 +293,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const removeLine = (idx: number) => {
     setForm((f) => {
       const items = f.items.filter((_, i) => i !== idx);
-      return { ...f, items: items.length ? items : [{ productId: products[0]?.id || 0, quantity: 1, note: '' }] };
+      return { ...f, items };
     });
   };
 
@@ -408,13 +431,14 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
             </thead>
             <tbody>
               {form.items.map((item, idx) => {
-                const p = productMap.get(item.productId);
+                const productId = resolveProductId(item.productId) || item.productId;
+                const p = productMap.get(productId);
                 return (
                   <tr key={idx}>
                     <td>
                       <SelectAutocomplete
                         disabled={!canEdit}
-                        value={item.productId ? String(item.productId) : ''}
+                        value={productId ? String(productId) : ''}
                         onChange={(v) => updateItem(idx, { productId: Number(v) || 0 })}
                         placeholder="Tìm sản phẩm..."
                         options={[
@@ -446,7 +470,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
           </table>
         </div>
         {canEdit && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setForm((f) => ({ ...f, items: [...f.items, { productId: products[0]?.id || 0, quantity: 1, note: '' }] }))}>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setForm((f) => ({ ...f, items: [...f.items, { productId: 0, quantity: 1, note: '' }] }))}>
             + Thêm dòng
           </button>
         )}

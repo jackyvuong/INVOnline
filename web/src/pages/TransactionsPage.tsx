@@ -13,11 +13,11 @@ import { notify } from '../utils/notification';
 type Tx = Record<string, unknown>;
 type Product = { id: number; code: string; name: string; stock: number; unit: string; category: string; brand: string };
 
-function defaultForm(products: Product[]) {
+function defaultForm() {
   return {
     date: nowDateTime(),
     type: 'IN',
-    productId: products[0]?.id || 0,
+    productId: 0,
     quantityStr: '1',
     note: '',
   };
@@ -34,7 +34,7 @@ export default function TransactionsPage() {
     dateFrom: '',
     dateTo: '',
   });
-  const [form, setForm] = useState(defaultForm([]));
+  const [form, setForm] = useState(defaultForm());
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const apiFilters = useMemo(() => ({
@@ -70,7 +70,7 @@ export default function TransactionsPage() {
         : 'Số lượng nhập phải là số nguyên dương.';
 
   const openCreate = () => {
-    setForm(defaultForm(products));
+    setForm(defaultForm());
     setErrors({});
     setOpen(true);
   };

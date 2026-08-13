@@ -140,8 +140,13 @@ public class TransactionService(DbConnectionFactory db, ProductService products)
         string date, string type, long productId, decimal quantity, string note, string email)
     {
         var product = await conn.QuerySingleOrDefaultAsync<Product>(
-            @"SELECT id AS Id, stock AS Stock FROM products WHERE id = @Id FOR UPDATE", new { Id = productId }, tx);
+            @"SELECT id AS Id, stock AS Stock FROM products
+              WHERE id = @Id OR legacy_id = @Id
+              ORDER BY CASE WHEN id = @Id THEN 0 ELSE 1 END
+              LIMIT 1
+              FOR UPDATE", new { Id = productId }, tx);
         if (product is null) return ServiceResult<int>.Fail("Không tìm thấy sản phẩm.");
+        productId = product.Id;
 
         type = type.ToUpperInvariant();
         decimal nextStock = product.Stock;
@@ -172,6 +177,12 @@ public class TransactionService(DbConnectionFactory db, ProductService products)
 
 public static class JsonDb
 {
-    public static string ToJson<T>(T value) => JsonSerializer.Serialize(value);
-    public static T FromJson<T>(string json) => JsonSerializer.Deserialize<T>(json) ?? Activator.CreateInstance<T>()!;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    public static string ToJson<T>(T value) => JsonSerializer.Serialize(value, JsonOpts);
+    public static T FromJson<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonOpts) ?? Activator.CreateInstance<T>()!;
 }

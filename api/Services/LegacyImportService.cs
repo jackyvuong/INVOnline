@@ -210,7 +210,7 @@ public class LegacyImportService(DbConnectionFactory db)
                         Recipient = s.Recipient ?? "",
                         Note = s.Note ?? "",
                         Status = s.Status,
-                        Items = ToJsonArray(s.Items),
+                        Items = RemapSlipItems(s.Items, prodMap),
                         OutIds = ToJsonArray(s.OutTransactionIds),
                         ReturnIds = ToJsonArray(s.ReturnTransactionIds),
                         CreatedAt = createdAt,
@@ -236,7 +236,7 @@ public class LegacyImportService(DbConnectionFactory db)
                         Supplier = s.Supplier ?? "",
                         Note = s.Note ?? "",
                         Status = s.Status,
-                        Items = ToJsonArray(s.Items),
+                        Items = RemapSlipItems(s.Items, prodMap),
                         InIds = ToJsonArray(s.InTransactionIds),
                         ReturnIds = ToJsonArray(s.ReturnTransactionIds),
                         CreatedAt = createdAt,
@@ -298,6 +298,44 @@ public class LegacyImportService(DbConnectionFactory db)
 
     private static DateTimeOffset ParseOptionalDate(string? value) =>
         string.IsNullOrWhiteSpace(value) ? DateTimeOffset.UtcNow : ServiceHelpers.ParseLegacyDateTime(value);
+
+    private static string RemapSlipItems(object? value, Dictionary<int, long> prodMap)
+    {
+        using var doc = JsonDocument.Parse(ToJsonArray(value));
+        if (doc.RootElement.ValueKind != JsonValueKind.Array) return "[]";
+
+        var list = new List<object>();
+        foreach (var el in doc.RootElement.EnumerateArray())
+        {
+            var pid = ReadInt(el, "productId", "ProductId");
+            var qty = ReadDecimal(el, "quantity", "Quantity");
+            var note = ReadString(el, "note", "Note");
+            var mapped = prodMap.TryGetValue(pid, out var id) ? id : pid;
+            list.Add(new { productId = mapped, quantity = qty, note });
+        }
+        return JsonSerializer.Serialize(list);
+    }
+
+    private static int ReadInt(JsonElement el, params string[] names)
+    {
+        foreach (var n in names)
+            if (el.TryGetProperty(n, out var p) && p.TryGetInt32(out var v)) return v;
+        return 0;
+    }
+
+    private static decimal ReadDecimal(JsonElement el, params string[] names)
+    {
+        foreach (var n in names)
+            if (el.TryGetProperty(n, out var p) && p.TryGetDecimal(out var v)) return v;
+        return 0;
+    }
+
+    private static string ReadString(JsonElement el, params string[] names)
+    {
+        foreach (var n in names)
+            if (el.TryGetProperty(n, out var p)) return p.GetString() ?? "";
+        return "";
+    }
 
     private static string ToJsonArray(object? value)
     {
