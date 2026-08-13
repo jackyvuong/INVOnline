@@ -90,6 +90,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const { confirmDialog } = useConfirm();
   const { search, setSearch } = useGlobalSearch();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [open, setOpen] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [editing, setEditing] = useState<Slip | null>(null);
@@ -114,7 +115,10 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
 
   useEffect(() => {
     loadProducts();
-  }, []);
+    if (config.partyField === 'supplier') {
+      api<{ name: string }[]>('/categories/options').then(setCategories);
+    }
+  }, [config.partyField]);
 
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
@@ -409,11 +413,27 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
           </div>
           <div className="field">
             <label>{config.partyLabel}
-              <input
-                readOnly={!canEdit}
-                value={config.partyField === 'recipient' ? form.recipient : form.supplier}
-                onChange={(e) => setForm({ ...form, [config.partyField]: e.target.value })}
-              />
+              {config.partyField === 'supplier' ? (
+                <SelectAutocomplete
+                  disabled={!canEdit}
+                  value={form.supplier}
+                  onChange={(v) => setForm({ ...form, supplier: v })}
+                  placeholder="Tìm / chọn công ty..."
+                  options={[
+                    { value: '', label: '-- Chọn công ty --' },
+                    ...categories.map((c) => ({ value: c.name, label: c.name })),
+                    ...(form.supplier && !categories.some((c) => c.name === form.supplier)
+                      ? [{ value: form.supplier, label: form.supplier }]
+                      : []),
+                  ]}
+                />
+              ) : (
+                <input
+                  readOnly={!canEdit}
+                  value={form.recipient}
+                  onChange={(e) => setForm({ ...form, recipient: e.target.value })}
+                />
+              )}
             </label>
           </div>
           <div className="field full">
