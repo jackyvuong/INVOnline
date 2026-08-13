@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, downloadCsv } from '../api/client';
 import DataTable from '../components/DataTable';
 import { Panel } from '../components/Panel';
+import { useGlobalSearch } from '../context/SearchContext';
 import { formatNumber, todayDate, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
@@ -19,6 +20,7 @@ function firstDayOfMonth() {
 
 export default function ReportPage() {
   const todayStr = todayDate();
+  const { search, setSearch } = useGlobalSearch();
   const [from, setFrom] = useState(firstDayOfMonth);
   const [to, setTo] = useState(todayStr);
   const [rows, setRows] = useState<ReportRow[]>([]);
@@ -95,6 +97,24 @@ export default function ReportPage() {
         <button type="submit" className="btn btn--primary">Xem báo cáo</button>
       </form>
 
+      <div className="toolbar">
+        <div className="toolbar__grow">
+          <input
+            type="search"
+            className="input"
+            placeholder="Tìm mã, tên, hãng..."
+            autoComplete="off"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {search && (
+          <button type="button" className="btn btn--ghost" onClick={() => setSearch('')}>
+            Xóa lọc
+          </button>
+        )}
+      </div>
+
       <div className="summary-row" id="report-summary">
         <div className="summary-chip">Đầu kỳ: <strong>{formatNumber(summary.opening)}</strong></div>
         <div className="summary-chip summary-chip--success">Nhập: <strong>{formatNumber(summary.inQty)}</strong></div>
@@ -105,7 +125,9 @@ export default function ReportPage() {
 
       <DataTable
         rows={rows as unknown as Record<string, unknown>[]}
-        showSearch={false}
+        searchKeys={['code', 'name', 'brand']}
+        searchPlaceholder="Tìm mã, tên, hãng..."
+        externalSearch={search}
         defaultSort={{ key: 'code', direction: 'asc' }}
         emptyTitle="Chưa có báo cáo"
         emptyDesc='Chọn khoảng thời gian rồi nhấn "Xem báo cáo".'

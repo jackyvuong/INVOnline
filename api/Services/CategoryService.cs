@@ -26,6 +26,45 @@ public class CategoryService(DbConnectionFactory db)
               FROM categories c ORDER BY c.name");
     }
 
+    public async Task<IEnumerable<object>> GetOptionsAsync()
+    {
+        await using var conn = db.Create();
+        return await conn.QueryAsync(
+            @"SELECT id AS id, name AS name FROM categories ORDER BY name");
+    }
+
+    public async Task<PagedResult<object>> GetPagedAsync(PagedQuery q)
+    {
+        await using var conn = db.Create();
+        var search = PaginationHelper.LikePattern(q.Search);
+        const string fromSql = @"
+            FROM categories c
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*)::int AS product_count FROM products p WHERE p.category_name = c.name
+            ) pc ON true";
+        const string whereSql = "WHERE (@Search IS NULL OR c.code ILIKE @Search OR c.name ILIKE @Search OR c.description ILIKE @Search)";
+
+        var total = await conn.ExecuteScalarAsync<int>(
+            $"SELECT COUNT(*) {fromSql} {whereSql}", new { Search = search });
+
+        var sortMap = new Dictionary<string, string>
+        {
+            ["code"] = "c.code", ["name"] = "c.name", ["description"] = "c.description", ["productCount"] = "pc.product_count",
+        };
+        var order = PaginationHelper.OrderClause(PaginationHelper.ResolveSort(q.Sort, sortMap, "code"), q.Desc);
+
+        var items = await conn.QueryAsync(
+            $@"SELECT c.id AS id, c.legacy_id AS {PaginationHelper.Alias("legacyId")}, c.code AS code, c.name AS name, c.description AS description,
+               c.created_at AS {PaginationHelper.Alias("createdAt")}, c.updated_at AS {PaginationHelper.Alias("updatedAt")},
+               pc.product_count AS {PaginationHelper.Alias("productCount")}
+               {fromSql} {whereSql}
+               ORDER BY {order}
+               LIMIT @Limit OFFSET @Offset",
+            new { Search = search, Limit = q.NormalizedPageSize, Offset = q.Offset });
+
+        return PaginationHelper.Of(items, total, q);
+    }
+
     public async Task<Category?> GetByIdAsync(long id)
     {
         await using var conn = db.Create();

@@ -17,6 +17,61 @@ public class ProductService(DbConnectionFactory db)
               FROM products ORDER BY code");
     }
 
+    public async Task<IEnumerable<object>> GetOptionsAsync()
+    {
+        await using var conn = db.Create();
+        return await conn.QueryAsync(
+            @"SELECT id AS id, code AS code, name AS name, category_name AS category, unit AS unit,
+              brand AS brand, stock AS stock
+              FROM products ORDER BY code");
+    }
+
+    public async Task<PagedResult<object>> GetPagedAsync(PagedQuery q, string? category, string? status)
+    {
+        await using var conn = db.Create();
+        var search = PaginationHelper.LikePattern(q.Search);
+        const string statusExpr = "CASE WHEN p.stock <= 0 THEN 'OUT' WHEN p.stock <= p.warning_stock THEN 'LOW' ELSE 'OK' END";
+        var where = @"WHERE (@Search IS NULL OR p.code ILIKE @Search OR p.name ILIKE @Search OR p.category_name ILIKE @Search
+            OR p.brand ILIKE @Search OR p.description ILIKE @Search OR p.note ILIKE @Search)
+            AND (@Category IS NULL OR @Category = '' OR p.category_name = @Category)
+            AND (@Status IS NULL OR @Status = '' OR " + statusExpr + " = @Status)";
+
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM products p {where}",
+            new { Search = search, Category = category, Status = status });
+
+        var sortMap = new Dictionary<string, string>
+        {
+            ["code"] = "p.code", ["name"] = "p.name", ["category"] = "p.category_name", ["brand"] = "p.brand",
+            ["stock"] = "p.stock", ["status"] = statusExpr,
+        };
+        var order = PaginationHelper.OrderClause(PaginationHelper.ResolveSort(q.Sort, sortMap, "code"), q.Desc);
+
+        var items = await conn.QueryAsync(
+            $@"SELECT p.id AS id, p.legacy_id AS {PaginationHelper.Alias("legacyId")}, p.code AS code, p.name AS name, p.category_name AS category,
+               p.unit AS unit, p.brand AS brand, p.description AS description, p.note AS note,
+               p.warning_stock AS {PaginationHelper.Alias("warningStock")}, p.stock AS stock, {statusExpr} AS status
+               FROM products p {where}
+               ORDER BY {order}
+               LIMIT @Limit OFFSET @Offset",
+            new { Search = search, Category = category, Status = status, Limit = q.NormalizedPageSize, Offset = q.Offset });
+
+        return PaginationHelper.Of(items, total, q);
+    }
+
+    public async Task<IEnumerable<object>> GetAlertsAsync(int limit = 8)
+    {
+        await using var conn = db.Create();
+        const string statusExpr = "CASE WHEN p.stock <= 0 THEN 'OUT' WHEN p.stock <= p.warning_stock THEN 'LOW' ELSE 'OK' END";
+        return await conn.QueryAsync(
+            $@"SELECT p.id AS id, p.code AS code, p.name AS name, p.stock AS stock, p.unit AS unit,
+               p.warning_stock AS {PaginationHelper.Alias("warningStock")}, {statusExpr} AS status
+               FROM products p
+               WHERE {statusExpr} <> 'OK'
+               ORDER BY p.stock ASC
+               LIMIT @Limit",
+            new { Limit = limit });
+    }
+
     public async Task<Product?> GetByIdAsync(long id)
     {
         await using var conn = db.Create();
@@ -121,12 +176,13 @@ public class ProductService(DbConnectionFactory db)
 
     public async Task<object> GetDashboardStatsAsync()
     {
-        var products = (await GetAllAsync()).ToList();
-        var totalProducts = products.Count;
-        var totalStock = products.Sum(p => p.Stock);
-        var lowCount = products.Count(p => StockStatus.FromProduct(p.Stock, p.WarningStock) == StockStatus.Low);
-        var outCount = products.Count(p => StockStatus.FromProduct(p.Stock, p.WarningStock) == StockStatus.Out);
-        return new { totalProducts, totalStock, lowCount, outCount };
+        await using var conn = db.Create();
+        return await conn.QuerySingleAsync(
+            $@"SELECT COUNT(*)::int AS {PaginationHelper.Alias("totalProducts")},
+              COALESCE(SUM(stock), 0) AS {PaginationHelper.Alias("totalStock")},
+              COUNT(*) FILTER (WHERE stock > 0 AND stock <= warning_stock)::int AS {PaginationHelper.Alias("lowCount")},
+              COUNT(*) FILTER (WHERE stock <= 0)::int AS {PaginationHelper.Alias("outCount")}
+              FROM products");
     }
 
     private async Task<Dictionary<string, string>> ValidateAsync(Product input, long? editingId)

@@ -66,19 +66,7 @@ public class DashboardController(ProductService products, TransactionService tra
     public async Task<IActionResult> Recent() => Ok(await transactions.GetRecentAsync(5));
 
     [HttpGet("alerts")]
-    public async Task<IActionResult> Alerts()
-    {
-        var list = (await products.GetAllAsync())
-            .Where(p => StockStatus.FromProduct(p.Stock, p.WarningStock) != StockStatus.Ok)
-            .OrderBy(p => p.Stock)
-            .Take(8)
-            .Select(p => new
-            {
-                p.Id, p.Code, p.Name, p.Stock, unit = p.Unit, p.WarningStock,
-                status = StockStatus.FromProduct(p.Stock, p.WarningStock),
-            });
-        return Ok(list);
-    }
+    public async Task<IActionResult> Alerts() => Ok(await products.GetAlertsAsync(8));
 }
 
 [ApiController]
@@ -87,7 +75,11 @@ public class DashboardController(ProductService products, TransactionService tra
 public class CategoriesController(CategoryService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await service.GetAllWithProductCountAsync());
+    public async Task<IActionResult> GetAll([FromQuery] PagedQuery q)
+        => Ok(await service.GetPagedAsync(q));
+
+    [HttpGet("options")]
+    public async Task<IActionResult> Options() => Ok(await service.GetOptionsAsync());
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
@@ -124,17 +116,14 @@ public class CategoriesController(CategoryService service) : ControllerBase
 public class ProductsController(ProductService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll()
-    {
-        var list = (await service.GetAllAsync()).Select(p => new
-        {
-            p.Id, legacyId = p.LegacyId, p.Code, p.Name, category = p.CategoryName, p.Unit, p.Brand,
-            p.Description, p.Note, warningStock = p.WarningStock, p.Stock,
-            status = StockStatus.FromProduct(p.Stock, p.WarningStock),
-            p.CreatedAt, p.UpdatedAt, p.CreatedByEmail, p.UpdatedByEmail,
-        });
-        return Ok(list);
-    }
+    public async Task<IActionResult> GetAll(
+        [FromQuery] PagedQuery q,
+        [FromQuery] string? category,
+        [FromQuery] string? status)
+        => Ok(await service.GetPagedAsync(q, category, status));
+
+    [HttpGet("options")]
+    public async Task<IActionResult> Options() => Ok(await service.GetOptionsAsync());
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
@@ -173,7 +162,14 @@ public class TransactionsController(TransactionService service) : ControllerBase
     public record CreateTxRequest(string Date, string Type, long ProductId, decimal Quantity, string? Note);
 
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await service.GetAllEnrichedAsync());
+    public async Task<IActionResult> GetAll(
+        [FromQuery] PagedQuery q,
+        [FromQuery] string? type,
+        [FromQuery] string? category,
+        [FromQuery] long? productId,
+        [FromQuery] string? dateFrom,
+        [FromQuery] string? dateTo)
+        => Ok(await service.GetPagedAsync(q, type, category, productId, dateFrom, dateTo));
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTxRequest req)
@@ -189,7 +185,12 @@ public class TransactionsController(TransactionService service) : ControllerBase
 public class ExportSlipsController(ExportSlipService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await service.GetAllAsync());
+    public async Task<IActionResult> GetAll(
+        [FromQuery] PagedQuery q,
+        [FromQuery] string? status,
+        [FromQuery] string? dateFrom,
+        [FromQuery] string? dateTo)
+        => Ok(await service.GetPagedAsync(q, status, dateFrom, dateTo));
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
@@ -247,7 +248,12 @@ public class ExportSlipsController(ExportSlipService service) : ControllerBase
 public class ImportSlipsController(ImportSlipService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await service.GetAllAsync());
+    public async Task<IActionResult> GetAll(
+        [FromQuery] PagedQuery q,
+        [FromQuery] string? status,
+        [FromQuery] string? dateFrom,
+        [FromQuery] string? dateTo)
+        => Ok(await service.GetPagedAsync(q, status, dateFrom, dateTo));
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
@@ -332,5 +338,30 @@ public class SettingsController(SettingsService settings) : ControllerBase
     {
         var result = await settings.ClearAllAsync(User.GetUserEmail());
         return result.Ok ? Ok(new { ok = true }) : BadRequest(result);
+    }
+}
+
+[ApiController]
+[Route("api/users")]
+[Authorize]
+public class UsersController(UserService service) : ControllerBase
+{
+    public record CreateUserRequest(string Email, string? DisplayName);
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll() => Ok(await service.GetAllAsync());
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
+    {
+        var result = await service.CreateAsync(req.Email, req.DisplayName ?? "");
+        return result.Ok ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        var result = await service.RemoveAsync(id, User.GetUserEmail());
+        return result.Ok ? NoContent() : BadRequest(result);
     }
 }

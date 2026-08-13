@@ -16,6 +16,44 @@ public class ExportSlipService(DbConnectionFactory db, TransactionService transa
         return rows.Select(MapSlip);
     }
 
+    public async Task<PagedResult<object>> GetPagedAsync(PagedQuery q, string? status, string? dateFrom, string? dateTo)
+    {
+        await using var conn = db.Create();
+        var search = PaginationHelper.LikePattern(q.Search);
+        const string fromSql = "FROM export_slips s";
+        const string whereSql = @"WHERE (@Search IS NULL OR s.code ILIKE @Search OR s.recipient ILIKE @Search OR s.note ILIKE @Search)
+            AND (@Status IS NULL OR @Status = '' OR s.status = @Status)
+            AND (@DateFrom IS NULL OR @DateFrom = '' OR s.slip_date::date >= @DateFrom::date)
+            AND (@DateTo IS NULL OR @DateTo = '' OR s.slip_date::date <= @DateTo::date)";
+
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) {fromSql} {whereSql}",
+            new { Search = search, Status = status, DateFrom = dateFrom, DateTo = dateTo });
+
+        var sortMap = new Dictionary<string, string>
+        {
+            ["code"] = "s.code", ["slipDate"] = "s.slip_date", ["party"] = "s.recipient",
+            ["itemCount"] = "item_count", ["totalQty"] = "total_qty", ["status"] = "s.status",
+        };
+        var order = PaginationHelper.OrderClause(PaginationHelper.ResolveSort(q.Sort, sortMap, "slipDate"), q.Desc);
+
+        var items = await conn.QueryAsync(
+            $@"SELECT s.id AS id, s.code AS code, s.slip_date AS {PaginationHelper.Alias("slipDate")}, s.recipient AS recipient,
+               s.note AS note, s.status AS status, s.items AS items,
+               s.recipient AS party,
+               jsonb_array_length(COALESCE(s.items, '[]'::jsonb)) AS {PaginationHelper.Alias("itemCount")},
+               COALESCE((SELECT SUM((elem->>'quantity')::numeric)
+                 FROM jsonb_array_elements(COALESCE(s.items, '[]'::jsonb)) elem), 0) AS {PaginationHelper.Alias("totalQty")},
+               jsonb_array_length(COALESCE(s.items, '[]'::jsonb)) AS item_count,
+               COALESCE((SELECT SUM((elem->>'quantity')::numeric)
+                 FROM jsonb_array_elements(COALESCE(s.items, '[]'::jsonb)) elem), 0) AS total_qty
+               {fromSql} {whereSql}
+               ORDER BY {order}
+               LIMIT @Limit OFFSET @Offset",
+            new { Search = search, Status = status, DateFrom = dateFrom, DateTo = dateTo, Limit = q.NormalizedPageSize, Offset = q.Offset });
+
+        return PaginationHelper.Of(items, total, q);
+    }
+
     public async Task<ExportSlip?> GetByIdAsync(long id)
     {
         await using var conn = db.Create();

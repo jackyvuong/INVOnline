@@ -35,6 +35,23 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return res.json();
 }
 
+export type PagedResult<T> = { items: T[]; total: number; page: number; pageSize: number };
+
+export type QueryParams = Record<string, string | number | undefined | null>;
+
+export function buildQuery(params: QueryParams) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+  }
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function apiPaged<T>(path: string, params: QueryParams = {}) {
+  return api<PagedResult<T>>(`${path}${buildQuery(params)}`);
+}
+
 export function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

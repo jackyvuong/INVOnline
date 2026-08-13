@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, downloadCsv } from '../api/client';
 import { useConfirm } from '../components/ConfirmProvider';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import { Panel } from '../components/Panel';
 import { useGlobalSearch } from '../context/SearchContext';
+import { usePagedList } from '../hooks/usePagedList';
 import { formatNumber, todayDate, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
@@ -12,15 +13,16 @@ type Category = { id: number; code: string; name: string; description: string; p
 
 export default function CategoriesPage() {
   const { confirmDialog } = useConfirm();
-  const { search } = useGlobalSearch();
-  const [rows, setRows] = useState<Category[]>([]);
+  const { search, setSearch } = useGlobalSearch();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [form, setForm] = useState({ code: '', name: '', description: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const load = () => api<Category[]>('/categories').then(setRows);
-  useEffect(() => { load(); }, []);
+  const list = usePagedList<Category>('/categories', {
+    defaultSort: { key: 'code', direction: 'asc' },
+    search,
+  });
 
   const openModal = (category: Category | null) => {
     setEditing(category);
@@ -34,7 +36,7 @@ export default function CategoriesPage() {
       if (editing) await api(`/categories/${editing.id}`, { method: 'PUT', body: JSON.stringify(form) });
       else await api('/categories', { method: 'POST', body: JSON.stringify(form) });
       setOpen(false);
-      load();
+      list.reload();
       notify.success(editing ? 'Đã cập nhật công ty.' : 'Đã thêm công ty.');
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string>; message?: string };
@@ -57,37 +59,27 @@ export default function CategoriesPage() {
     if (!ok) return;
     try {
       await api(`/categories/${c.id}`, { method: 'DELETE' });
-      load();
+      list.reload();
       notify.success('Đã xóa công ty.');
     } catch (e: unknown) {
       notify.error((e as { message?: string }).message || 'Không xóa được công ty.');
     }
   };
 
-  const exportCsv = () => {
-    const filtered = rows.filter((r) => {
-      if (!search.trim()) return true;
-      const q = search.toLowerCase();
-      return [r.code, r.name, r.description].some((v) => String(v).toLowerCase().includes(q));
-    });
-    if (filtered.length === 0) {
+  const exportCsv = async () => {
+    const all = await list.fetchAll();
+    if (all.length === 0) {
       notify.warning('Không có dữ liệu để xuất.');
       return;
     }
     const csv = toCsvRowNumber(
-      filtered,
+      all,
       ['STT', 'Mã công ty', 'Tên công ty', 'Mô tả', 'Số SP'],
       (row, index) => [index + 1, row.code, row.name, row.description || '', row.productCount]
     );
     downloadCsv(`cong-ty-${todayDate()}.csv`, csv);
-    notify.success(`Đã xuất ${formatNumber(filtered.length)} công ty ra CSV.`);
+    notify.success(`Đã xuất ${formatNumber(all.length)} công ty ra CSV.`);
   };
-
-  const filtered = rows.filter((r) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return [r.code, r.name, r.description].some((v) => String(v).toLowerCase().includes(q));
-  });
 
   return (
     <>
@@ -100,19 +92,44 @@ export default function CategoriesPage() {
           </button>
         }
       >
+        <div className="toolbar">
+          <div className="toolbar__grow">
+            <input
+              type="search"
+              className="input"
+              placeholder="Tìm mã, tên, mô tả..."
+              autoComplete="off"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {search && (
+            <button type="button" className="btn btn--ghost" onClick={() => setSearch('')}>
+              Xóa lọc
+            </button>
+          )}
+          <button type="button" className="btn btn--ghost" onClick={exportCsv}>
+            Export CSV
+          </button>
+        </div>
+
         <DataTable
-          rows={filtered as unknown as Record<string, unknown>[]}
+          serverMode
+          rows={list.items as unknown as Record<string, unknown>[]}
+          total={list.total}
+          page={list.page}
+          pageSizeControlled={list.pageSize}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          sortKey={list.sortKey}
+          sortDir={list.sortDir}
+          onSortChange={list.setSort}
+          loading={list.loading}
           showSearch={false}
           externalSearch={search}
           showStt
-          defaultSort={{ key: 'code', direction: 'asc' }}
           emptyTitle="Chưa có công ty"
           emptyDesc='Nhấn "Thêm công ty" để khai báo danh mục.'
-          toolbar={
-            <button type="button" className="btn btn--ghost" onClick={exportCsv}>
-              Export CSV
-            </button>
-          }
           columns={[
             { key: 'code', label: 'Mã', sortable: true, render: (r) => <span className="mono">{String(r.code)}</span> },
             { key: 'name', label: 'Tên', sortable: true, render: (r) => <div className="cell-primary">{String(r.name)}</div> },

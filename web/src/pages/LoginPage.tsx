@@ -12,13 +12,14 @@ export default function LoginPage() {
   const [googleReady, setGoogleReady] = useState(false);
 
   useEffect(() => {
+    if (token) navigate('/', { replace: true });
+  }, [token, navigate]);
+
+  useEffect(() => {
     setGoogleReady(true);
   }, []);
 
-  if (token) {
-    navigate('/', { replace: true });
-    return null;
-  }
+  if (token) return null;
 
   return (
     <div className="login-page">

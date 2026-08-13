@@ -262,7 +262,7 @@ public class LegacyImportService(DbConnectionFactory db)
         }
         catch (Exception ex)
         {
-            await tx.RollbackAsync();
+            try { await tx.RollbackAsync(); } catch { /* transaction may already be aborted */ }
             return ServiceResult<ImportSummary>.Fail($"Import thất bại: {ex.Message}");
         }
     }

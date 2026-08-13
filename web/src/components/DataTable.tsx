@@ -25,6 +25,16 @@ type Props<T> = {
   rowClassName?: (row: T) => string;
   externalSearch?: string;
   getSortValue?: (row: T, key: string) => unknown;
+  serverMode?: boolean;
+  total?: number;
+  page?: number;
+  pageSizeControlled?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  sortKey?: string | null;
+  sortDir?: 'asc' | 'desc';
+  onSortChange?: (key: string, dir: 'asc' | 'desc') => void;
+  loading?: boolean;
 };
 
 export default function DataTable<T extends Record<string, unknown>>({
@@ -43,6 +53,16 @@ export default function DataTable<T extends Record<string, unknown>>({
   rowClassName,
   externalSearch,
   getSortValue,
+  serverMode = false,
+  total: serverTotal,
+  page: serverPage,
+  pageSizeControlled,
+  onPageChange,
+  onPageSizeChange,
+  sortKey: serverSortKey,
+  sortDir: serverSortDir,
+  onSortChange,
+  loading = false,
 }: Props<T>) {
   const useSearch = showSearch ?? searchKeys.length > 0;
   const [internalSearch, setInternalSearch] = useState('');
@@ -53,11 +73,17 @@ export default function DataTable<T extends Record<string, unknown>>({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
 
+  const activeSortKey = serverMode ? (serverSortKey ?? null) : sortKey;
+  const activeSortDir = serverMode ? (serverSortDir ?? 'asc') : sortDir;
+  const activePage = serverMode ? (serverPage ?? 1) : page;
+  const activePageSize = serverMode ? (pageSizeControlled ?? initialPageSize) : pageSize;
+
   useEffect(() => {
-    setPage(1);
-  }, [search, rows.length, pageSize]);
+    if (!serverMode) setPage(1);
+  }, [search, rows.length, pageSize, serverMode]);
 
   const filtered = useMemo(() => {
+    if (serverMode) return rows;
     let list = rows;
     if (useSearch && search.trim()) {
       const q = search.toLowerCase();
@@ -74,14 +100,20 @@ export default function DataTable<T extends Record<string, unknown>>({
       });
     }
     return list;
-  }, [rows, search, searchKeys, sortKey, sortDir, useSearch, getSortValue]);
+  }, [rows, search, searchKeys, sortKey, sortDir, useSearch, getSortValue, serverMode]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalCount = serverMode ? (serverTotal ?? 0) : filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / activePageSize));
+  const pageRows = serverMode ? rows : filtered.slice((page - 1) * pageSize, page * pageSize);
   const colSpan = columns.length + (showStt ? 1 : 0) + (actions ? 1 : 0);
 
   const toggleSort = (key: string, sortable?: boolean) => {
     if (!sortable) return;
+    if (serverMode && onSortChange) {
+      const nextDir = activeSortKey === key && activeSortDir === 'asc' ? 'desc' : 'asc';
+      onSortChange(key, nextDir);
+      return;
+    }
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
       setSortKey(key);
@@ -89,8 +121,21 @@ export default function DataTable<T extends Record<string, unknown>>({
     }
   };
 
-  const from = filtered.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, filtered.length);
+  const from = totalCount === 0 ? 0 : (activePage - 1) * activePageSize + 1;
+  const to = Math.min(activePage * activePageSize, totalCount);
+
+  const goPage = (p: number) => {
+    if (serverMode && onPageChange) onPageChange(p);
+    else setPage(p);
+  };
+
+  const changePageSize = (size: number) => {
+    if (serverMode && onPageSizeChange) onPageSizeChange(size);
+    else {
+      setPageSize(size);
+      setPage(1);
+    }
+  };
 
   return (
     <>
@@ -113,7 +158,7 @@ export default function DataTable<T extends Record<string, unknown>>({
           {toolbar}
         </div>
       )}
-      <div className="table-wrap">
+      <div className={`table-wrap${loading ? ' table-wrap--loading' : ''}`}>
         <table className="table">
           <thead>
             <tr>
@@ -121,10 +166,10 @@ export default function DataTable<T extends Record<string, unknown>>({
               {columns.map((c) => (
                 <th
                   key={c.key}
-                  className={`${c.className || ''} ${c.sortable ? 'is-sortable' : ''} ${sortKey === c.key ? (sortDir === 'asc' ? 'is-sorted-asc' : 'is-sorted-desc') : ''}`.trim()}
+                  className={`${c.className || ''} ${c.sortable ? 'is-sortable' : ''} ${activeSortKey === c.key ? (activeSortDir === 'asc' ? 'is-sorted-asc' : 'is-sorted-desc') : ''}`.trim()}
                   onClick={() => toggleSort(c.key, c.sortable)}
                   data-sort={c.sortable ? c.key : undefined}
-                  aria-sort={sortKey === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                  aria-sort={activeSortKey === c.key ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
                   {c.label}
                 </th>
@@ -133,7 +178,7 @@ export default function DataTable<T extends Record<string, unknown>>({
             </tr>
           </thead>
           <tbody>
-            {pageRows.length === 0 ? (
+            {pageRows.length === 0 && !loading ? (
               <tr>
                 <td colSpan={colSpan}>
                   <div className="empty-state empty-state--compact">
@@ -144,7 +189,7 @@ export default function DataTable<T extends Record<string, unknown>>({
               </tr>
             ) : (
               pageRows.map((row, i) => {
-                const absoluteIndex = (page - 1) * pageSize + i;
+                const absoluteIndex = (activePage - 1) * activePageSize + i;
                 return (
                   <tr key={absoluteIndex} className={rowClassName?.(row)}>
                     {showStt && <td>{absoluteIndex + 1}</td>}
@@ -160,30 +205,28 @@ export default function DataTable<T extends Record<string, unknown>>({
             )}
           </tbody>
         </table>
+        {loading && <div className="table-loading">Đang tải...</div>}
       </div>
       <div className="pagination">
         <div className="pagination__info">
-          Hiển thị <strong>{from}</strong>–<strong>{to}</strong> / <strong>{filtered.length}</strong>
+          Hiển thị <strong>{from}</strong>–<strong>{to}</strong> / <strong>{totalCount}</strong>
         </div>
         <div className="pagination__controls">
           <select
             className="select select--sm"
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
+            value={activePageSize}
+            onChange={(e) => changePageSize(Number(e.target.value))}
             aria-label="Số dòng mỗi trang"
           >
             {PAGE_SIZE_OPTIONS.map((n) => (
               <option key={n} value={n}>{n}/trang</option>
             ))}
           </select>
-          <button type="button" className="btn btn--ghost btn--sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          <button type="button" className="btn btn--ghost btn--sm" disabled={activePage <= 1} onClick={() => goPage(activePage - 1)}>
             Trước
           </button>
-          <span className="pagination__page">{page}/{totalPages}</span>
-          <button type="button" className="btn btn--ghost btn--sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+          <span className="pagination__page">{activePage}/{totalPages}</span>
+          <button type="button" className="btn btn--ghost btn--sm" disabled={activePage >= totalPages} onClick={() => goPage(activePage + 1)}>
             Sau
           </button>
         </div>

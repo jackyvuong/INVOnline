@@ -6,8 +6,10 @@ import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import NoteCell from '../components/NoteCell';
 import { Panel } from '../components/Panel';
+import SelectAutocomplete from '../components/SelectAutocomplete';
 import { UNIT_SUGGESTIONS } from '../constants';
 import { useGlobalSearch } from '../context/SearchContext';
+import { usePagedList } from '../hooks/usePagedList';
 import { formatNumber, stockStatusLabel, todayDate, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
@@ -18,8 +20,7 @@ type Product = {
 
 export default function ProductsPage() {
   const { confirmDialog } = useConfirm();
-  const { search } = useGlobalSearch();
-  const [rows, setRows] = useState<Product[]>([]);
+  const { search, setSearch } = useGlobalSearch();
   const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -28,22 +29,16 @@ export default function ProductsPage() {
   const [form, setForm] = useState({ code: '', name: '', category: '', unit: '', brand: '', description: '', note: '', warningStock: 10 });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const load = async () => {
-    const [p, c] = await Promise.all([api<Product[]>('/products'), api<{ name: string }[]>('/categories')]);
-    setRows(p);
-    setCategories(c);
-  };
-  useEffect(() => { load(); }, []);
+  const filters = useMemo(() => ({ category: filterCategory, status: filterStatus }), [filterCategory, filterStatus]);
+  const list = usePagedList<Product>('/products', {
+    defaultSort: { key: 'code', direction: 'asc' },
+    search,
+    filters,
+  });
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((p) => {
-      if (filterCategory && p.category !== filterCategory) return false;
-      if (filterStatus && p.status !== filterStatus) return false;
-      if (!q) return true;
-      return [p.code, p.name, p.category, p.brand, p.description, p.note].some((v) => String(v).toLowerCase().includes(q));
-    });
-  }, [rows, filterCategory, filterStatus, search]);
+  useEffect(() => {
+    api<{ name: string }[]>('/categories/options').then(setCategories);
+  }, []);
 
   const openModal = (product: Product | null) => {
     setEditing(product);
@@ -60,7 +55,7 @@ export default function ProductsPage() {
       if (editing) await api(`/products/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
       else await api('/products', { method: 'POST', body: JSON.stringify(payload) });
       setOpen(false);
-      load();
+      list.reload();
       notify.success(editing ? 'Đã cập nhật sản phẩm.' : 'Đã thêm sản phẩm.');
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string>; message?: string };
@@ -79,20 +74,21 @@ export default function ProductsPage() {
     if (!ok) return;
     try {
       await api(`/products/${p.id}`, { method: 'DELETE' });
-      load();
+      list.reload();
       notify.success('Đã xóa sản phẩm.');
     } catch (e: unknown) {
       notify.error((e as { message?: string }).message || 'Không xóa được sản phẩm.');
     }
   };
 
-  const exportCsv = () => {
-    if (filtered.length === 0) {
+  const exportCsv = async () => {
+    const all = await list.fetchAll();
+    if (all.length === 0) {
       notify.warning('Không có dữ liệu để xuất.');
       return;
     }
     const csv = toCsvRowNumber(
-      filtered,
+      all,
       ['STT', 'Mã', 'Tên', 'Công ty', 'Hãng', 'Đơn vị', 'Tồn hiện tại', 'Ngưỡng cảnh báo', 'Trạng thái', 'Mô tả', 'Ghi chú'],
       (row, index) => [
         index + 1, row.code, row.name, row.category, row.brand || '', row.unit,
@@ -100,7 +96,7 @@ export default function ProductsPage() {
       ]
     );
     downloadCsv(`san-pham-${todayDate()}.csv`, csv);
-    notify.success(`Đã xuất ${formatNumber(filtered.length)} sản phẩm ra CSV.`);
+    notify.success(`Đã xuất ${formatNumber(all.length)} sản phẩm ra CSV.`);
   };
 
   return (
@@ -113,30 +109,70 @@ export default function ProductsPage() {
           </button>
         }
       >
+        <div className="toolbar">
+          <div className="toolbar__grow">
+            <input
+              type="search"
+              className="input"
+              placeholder="Tìm mã, tên, công ty, hãng..."
+              autoComplete="off"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <SelectAutocomplete
+            value={filterCategory}
+            onChange={setFilterCategory}
+            placeholder="Tìm công ty..."
+            options={[
+              { value: '', label: 'Tất cả công ty' },
+              ...categories.map((c) => ({ value: c.name, label: c.name })),
+            ]}
+          />
+          <SelectAutocomplete
+            value={filterStatus}
+            onChange={setFilterStatus}
+            placeholder="Tìm trạng thái..."
+            options={[
+              { value: '', label: 'Tất cả trạng thái' },
+              { value: 'OK', label: 'Đủ hàng' },
+              { value: 'LOW', label: 'Sắp hết' },
+              { value: 'OUT', label: 'Hết hàng' },
+            ]}
+          />
+          {(search || filterCategory || filterStatus) && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => {
+                setSearch('');
+                setFilterCategory('');
+                setFilterStatus('');
+              }}
+            >
+              Xóa lọc
+            </button>
+          )}
+          <button type="button" className="btn btn--ghost" onClick={exportCsv}>Export CSV</button>
+        </div>
+
         <DataTable
-          rows={filtered as unknown as Record<string, unknown>[]}
+          serverMode
+          rows={list.items as unknown as Record<string, unknown>[]}
+          total={list.total}
+          page={list.page}
+          pageSizeControlled={list.pageSize}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          sortKey={list.sortKey}
+          sortDir={list.sortDir}
+          onSortChange={list.setSort}
+          loading={list.loading}
           showSearch={false}
           externalSearch={search}
           showStt
-          defaultSort={{ key: 'code', direction: 'asc' }}
-          getSortValue={(row, field) => (field === 'status' ? row.status : row[field])}
           emptyTitle="Chưa có sản phẩm"
           emptyDesc='Nhấn "Thêm sản phẩm" để bắt đầu.'
-          toolbar={
-            <>
-              <select className="select" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ minWidth: 160 }}>
-                <option value="">Tất cả công ty</option>
-                {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-              </select>
-              <select className="select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ minWidth: 150 }}>
-                <option value="">Tất cả trạng thái</option>
-                <option value="OK">Đủ hàng</option>
-                <option value="LOW">Sắp hết</option>
-                <option value="OUT">Hết hàng</option>
-              </select>
-              <button type="button" className="btn btn--ghost" onClick={exportCsv}>Export CSV</button>
-            </>
-          }
           columns={[
             { key: 'code', label: 'Mã', sortable: true, render: (r) => <span className="mono">{String(r.code)}</span> },
             {
@@ -152,7 +188,7 @@ export default function ProductsPage() {
             { key: 'brand', label: 'Hãng', render: (r) => String(r.brand || '—') },
             { key: 'unit', label: 'Đơn vị' },
             { key: 'stock', label: 'Tồn', sortable: true, className: 'text-right', render: (r) => <strong>{formatNumber(Number(r.stock))}</strong> },
-            { key: 'status', label: 'Trạng thái', render: (r) => <StatusBadge status={String(r.status)} /> },
+            { key: 'status', label: 'Trạng thái', sortable: true, render: (r) => <StatusBadge status={String(r.status)} /> },
             { key: 'note', label: 'Ghi chú', className: 'note-col', render: (r) => <NoteCell note={String(r.note || '')} /> },
           ]}
           actions={(row) => {
@@ -185,10 +221,15 @@ export default function ProductsPage() {
           </div>
           <div className="field">
             <label>Công ty
-              <select className="select" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                <option value="">-- Chọn công ty --</option>
-                {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-              </select>
+              <SelectAutocomplete
+                value={form.category}
+                onChange={(v) => setForm({ ...form, category: v })}
+                placeholder="Tìm / chọn công ty..."
+                options={[
+                  { value: '', label: '-- Chọn công ty --' },
+                  ...categories.map((c) => ({ value: c.name, label: c.name })),
+                ]}
+              />
               {errors.categoryName && <span className="field-error">{errors.categoryName}</span>}
             </label>
             <p className="field-hint">Chọn từ danh mục Công Ty. Thêm mới tại menu Công Ty.</p>

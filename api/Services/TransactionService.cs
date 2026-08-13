@@ -11,19 +11,70 @@ public class TransactionService(DbConnectionFactory db, ProductService products)
     {
         await using var conn = db.Create();
         return await conn.QueryAsync(
-            @"SELECT t.id AS Id, t.legacy_id AS LegacyId, t.movement_at AS MovementAt, t.product_id AS ProductId,
-              t.type AS Type, t.quantity AS Quantity, t.note AS Note, t.created_at AS CreatedAt,
-              t.created_by_email AS CreatedByEmail,
-              p.code AS ProductCode, p.name AS ProductName, p.category_name AS CompanyName,
-              p.brand AS ProductBrand, p.unit AS ProductUnit
+            $@"SELECT t.id AS id, t.legacy_id AS {PaginationHelper.Alias("legacyId")}, t.movement_at AS {PaginationHelper.Alias("movementAt")}, t.product_id AS {PaginationHelper.Alias("productId")},
+              t.type AS type, t.quantity AS quantity, t.note AS note, t.created_at AS {PaginationHelper.Alias("createdAt")},
+              t.created_by_email AS {PaginationHelper.Alias("createdByEmail")},
+              p.code AS {PaginationHelper.Alias("productCode")}, p.name AS {PaginationHelper.Alias("productName")}, p.category_name AS {PaginationHelper.Alias("companyName")},
+              p.brand AS {PaginationHelper.Alias("productBrand")}, p.unit AS {PaginationHelper.Alias("productUnit")}
               FROM transactions t JOIN products p ON p.id = t.product_id
               ORDER BY t.legacy_id DESC");
     }
 
+    public async Task<PagedResult<object>> GetPagedAsync(
+        PagedQuery q, string? type, string? category, long? productId, string? dateFrom, string? dateTo)
+    {
+        await using var conn = db.Create();
+        var search = PaginationHelper.LikePattern(q.Search);
+        const string fromSql = "FROM transactions t JOIN products p ON p.id = t.product_id";
+        const string whereSql = @"WHERE (@Search IS NULL OR p.code ILIKE @Search OR p.name ILIKE @Search OR p.category_name ILIKE @Search
+            OR p.brand ILIKE @Search OR t.note ILIKE @Search OR t.type ILIKE @Search)
+            AND (@Type IS NULL OR @Type = '' OR t.type = @Type)
+            AND (@Category IS NULL OR @Category = '' OR p.category_name = @Category)
+            AND (@ProductId IS NULL OR t.product_id = @ProductId)
+            AND (@DateFrom IS NULL OR @DateFrom = '' OR t.movement_at::date >= @DateFrom::date)
+            AND (@DateTo IS NULL OR @DateTo = '' OR t.movement_at::date <= @DateTo::date)";
+
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) {fromSql} {whereSql}",
+            new { Search = search, Type = type, Category = category, ProductId = productId, DateFrom = dateFrom, DateTo = dateTo });
+
+        var sortMap = new Dictionary<string, string>
+        {
+            ["movementAt"] = "t.movement_at", ["type"] = "t.type", ["productCode"] = "p.code",
+            ["productName"] = "p.name", ["companyName"] = "p.category_name", ["productBrand"] = "p.brand",
+            ["quantity"] = "t.quantity",
+        };
+        var order = PaginationHelper.OrderClause(PaginationHelper.ResolveSort(q.Sort, sortMap, "movementAt"), q.Desc);
+
+        var items = await conn.QueryAsync(
+            $@"SELECT t.id AS id, t.legacy_id AS {PaginationHelper.Alias("legacyId")}, t.movement_at AS {PaginationHelper.Alias("movementAt")}, t.product_id AS {PaginationHelper.Alias("productId")},
+               t.type AS type, t.quantity AS quantity, t.note AS note,
+               p.code AS {PaginationHelper.Alias("productCode")}, p.name AS {PaginationHelper.Alias("productName")}, p.category_name AS {PaginationHelper.Alias("companyName")},
+               p.brand AS {PaginationHelper.Alias("productBrand")}, p.unit AS {PaginationHelper.Alias("productUnit")}
+               {fromSql} {whereSql}
+               ORDER BY {order}
+               LIMIT @Limit OFFSET @Offset",
+            new
+            {
+                Search = search, Type = type, Category = category, ProductId = productId,
+                DateFrom = dateFrom, DateTo = dateTo, Limit = q.NormalizedPageSize, Offset = q.Offset,
+            });
+
+        return PaginationHelper.Of(items, total, q);
+    }
+
     public async Task<IEnumerable<object>> GetRecentAsync(int limit = 5)
     {
-        var all = (await GetAllEnrichedAsync()).Take(limit);
-        return all;
+        await using var conn = db.Create();
+        return await conn.QueryAsync(
+            $@"SELECT t.id AS id, t.legacy_id AS {PaginationHelper.Alias("legacyId")}, t.movement_at AS {PaginationHelper.Alias("movementAt")}, t.product_id AS {PaginationHelper.Alias("productId")},
+              t.type AS type, t.quantity AS quantity, t.note AS note, t.created_at AS {PaginationHelper.Alias("createdAt")},
+              t.created_by_email AS {PaginationHelper.Alias("createdByEmail")},
+              p.code AS {PaginationHelper.Alias("productCode")}, p.name AS {PaginationHelper.Alias("productName")}, p.category_name AS {PaginationHelper.Alias("companyName")},
+              p.brand AS {PaginationHelper.Alias("productBrand")}, p.unit AS {PaginationHelper.Alias("productUnit")}
+              FROM transactions t JOIN products p ON p.id = t.product_id
+              ORDER BY t.legacy_id DESC
+              LIMIT @Limit",
+            new { Limit = limit });
     }
 
     public async Task<ServiceResult<object>> CreateAsync(string date, string type, long productId, decimal quantity, string note, string email)

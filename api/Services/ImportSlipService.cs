@@ -16,6 +16,44 @@ public class ImportSlipService(DbConnectionFactory db, TransactionService transa
         return rows.Select(MapSlip);
     }
 
+    public async Task<PagedResult<object>> GetPagedAsync(PagedQuery q, string? status, string? dateFrom, string? dateTo)
+    {
+        await using var conn = db.Create();
+        var search = PaginationHelper.LikePattern(q.Search);
+        const string fromSql = "FROM import_slips s";
+        const string whereSql = @"WHERE (@Search IS NULL OR s.code ILIKE @Search OR s.supplier ILIKE @Search OR s.note ILIKE @Search)
+            AND (@Status IS NULL OR @Status = '' OR s.status = @Status)
+            AND (@DateFrom IS NULL OR @DateFrom = '' OR s.slip_date::date >= @DateFrom::date)
+            AND (@DateTo IS NULL OR @DateTo = '' OR s.slip_date::date <= @DateTo::date)";
+
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) {fromSql} {whereSql}",
+            new { Search = search, Status = status, DateFrom = dateFrom, DateTo = dateTo });
+
+        var sortMap = new Dictionary<string, string>
+        {
+            ["code"] = "s.code", ["slipDate"] = "s.slip_date", ["party"] = "s.supplier",
+            ["itemCount"] = "item_count", ["totalQty"] = "total_qty", ["status"] = "s.status",
+        };
+        var order = PaginationHelper.OrderClause(PaginationHelper.ResolveSort(q.Sort, sortMap, "slipDate"), q.Desc);
+
+        var items = await conn.QueryAsync(
+            $@"SELECT s.id AS id, s.code AS code, s.slip_date AS {PaginationHelper.Alias("slipDate")}, s.supplier AS supplier,
+               s.note AS note, s.status AS status, s.items AS items,
+               s.supplier AS party,
+               jsonb_array_length(COALESCE(s.items, '[]'::jsonb)) AS {PaginationHelper.Alias("itemCount")},
+               COALESCE((SELECT SUM((elem->>'quantity')::numeric)
+                 FROM jsonb_array_elements(COALESCE(s.items, '[]'::jsonb)) elem), 0) AS {PaginationHelper.Alias("totalQty")},
+               jsonb_array_length(COALESCE(s.items, '[]'::jsonb)) AS item_count,
+               COALESCE((SELECT SUM((elem->>'quantity')::numeric)
+                 FROM jsonb_array_elements(COALESCE(s.items, '[]'::jsonb)) elem), 0) AS total_qty
+               {fromSql} {whereSql}
+               ORDER BY {order}
+               LIMIT @Limit OFFSET @Offset",
+            new { Search = search, Status = status, DateFrom = dateFrom, DateTo = dateTo, Limit = q.NormalizedPageSize, Offset = q.Offset });
+
+        return PaginationHelper.Of(items, total, q);
+    }
+
     public async Task<ImportSlip?> GetByIdAsync(long id)
     {
         await using var conn = db.Create();
@@ -193,40 +231,40 @@ public class ImportSlipService(DbConnectionFactory db, TransactionService transa
     }
 }
 
-public class ReportService(DbConnectionFactory db, ProductService products, TransactionService transactions)
+public class ReportService(DbConnectionFactory db)
 {
     public async Task<ServiceResult<List<object>>> BuildStockReportAsync(string fromDate, string toDate)
     {
         if (string.IsNullOrWhiteSpace(fromDate) || string.IsNullOrWhiteSpace(toDate))
             return ServiceResult<List<object>>.Fail("Vui lòng chọn Từ ngày và Đến ngày.");
-        if (DateOnly.Parse(fromDate) > DateOnly.Parse(toDate))
+        if (!DateOnly.TryParse(fromDate, out var from) || !DateOnly.TryParse(toDate, out var to))
+            return ServiceResult<List<object>>.Fail("Định dạng ngày không hợp lệ.");
+        if (from > to)
             return ServiceResult<List<object>>.Fail("Từ ngày không được lớn hơn Đến ngày.");
 
-        var productList = (await products.GetAllAsync()).ToList();
-        var txList = (await transactions.GetAllEnrichedAsync()).Cast<dynamic>().ToList();
-        var from = DateOnly.Parse(fromDate);
-        var to = DateOnly.Parse(toDate);
+        await using var conn = db.Create();
+        const string delta = "CASE t.type WHEN 'IN' THEN t.quantity WHEN 'OUT' THEN -t.quantity WHEN 'ADJUST' THEN t.quantity ELSE 0 END";
+        const string dayExpr = "(t.movement_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date";
 
-        var rows = productList.Select(p =>
-        {
-            decimal opening = 0, inQty = 0, outQty = 0, adjustQty = 0;
-            foreach (var tx in txList.Where(t => (long)t.ProductId == p.Id))
-            {
-                var day = DateOnly.FromDateTime(((DateTimeOffset)tx.MovementAt).DateTime);
-                var qty = (decimal)tx.Quantity;
-                var type = (string)tx.Type;
-                if (day < from) opening += ServiceHelpers.StockDelta(type, qty);
-                else if (day >= from && day <= to)
-                {
-                    if (type == "IN") inQty += qty;
-                    else if (type == "OUT") outQty += qty;
-                    else if (type == "ADJUST") adjustQty += qty;
-                }
-            }
-            var closing = opening + inQty - outQty + adjustQty;
-            return (object)new { productId = p.LegacyId, code = p.Code, name = p.Name, brand = p.Brand, category = p.CategoryName, unit = p.Unit, opening, inQty, outQty, adjustQty, closing };
-        }).ToList();
+        var rows = (await conn.QueryAsync(
+            $@"SELECT p.legacy_id AS {PaginationHelper.Alias("productId")},
+                      p.code AS code, p.name AS name, p.brand AS brand,
+                      p.category_name AS category, p.unit AS unit,
+                      COALESCE(SUM(CASE WHEN {dayExpr} < CAST(@From AS date) THEN {delta} ELSE 0 END), 0) AS opening,
+                      COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'IN' THEN t.quantity ELSE 0 END), 0) AS {PaginationHelper.Alias("inQty")},
+                      COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'OUT' THEN t.quantity ELSE 0 END), 0) AS {PaginationHelper.Alias("outQty")},
+                      COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'ADJUST' THEN t.quantity ELSE 0 END), 0) AS {PaginationHelper.Alias("adjustQty")},
+                      COALESCE(SUM(CASE WHEN {dayExpr} < CAST(@From AS date) THEN {delta} ELSE 0 END), 0)
+                        + COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'IN' THEN t.quantity ELSE 0 END), 0)
+                        - COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'OUT' THEN t.quantity ELSE 0 END), 0)
+                        + COALESCE(SUM(CASE WHEN {dayExpr} >= CAST(@From AS date) AND {dayExpr} <= CAST(@To AS date) AND t.type = 'ADJUST' THEN t.quantity ELSE 0 END), 0)
+                        AS closing
+               FROM products p
+               LEFT JOIN transactions t ON t.product_id = p.id
+               GROUP BY p.legacy_id, p.code, p.name, p.brand, p.category_name, p.unit
+               ORDER BY p.code",
+            new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") })).ToList();
 
-        return ServiceResult<List<object>>.Success(rows);
+        return ServiceResult<List<object>>.Success(rows.Cast<object>().ToList());
     }
 }

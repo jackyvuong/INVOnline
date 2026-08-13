@@ -3,39 +3,39 @@ import { api, downloadCsv } from '../api/client';
 import { StatusBadge } from '../components/Badge';
 import DataTable from '../components/DataTable';
 import { Panel } from '../components/Panel';
+import SelectAutocomplete from '../components/SelectAutocomplete';
 import { useGlobalSearch } from '../context/SearchContext';
+import { usePagedList } from '../hooks/usePagedList';
 import { formatNumber, stockStatusLabel, todayDate, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
 type Product = { id: number; code: string; name: string; brand: string; category: string; unit: string; stock: number; warningStock: number; status: string };
 
 export default function StockPage() {
-  const { search } = useGlobalSearch();
-  const [rows, setRows] = useState<Product[]>([]);
+  const { search, setSearch } = useGlobalSearch();
+  const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
-  useEffect(() => { api<Product[]>('/products').then(setRows); }, []);
+  const filters = useMemo(() => ({ category: filterCategory, status: filterStatus }), [filterCategory, filterStatus]);
+  const list = usePagedList<Product>('/products', {
+    defaultSort: { key: 'code', direction: 'asc' },
+    search,
+    filters,
+  });
 
-  const categories = useMemo(() => [...new Set(rows.map((r) => r.category))].sort(), [rows]);
+  useEffect(() => {
+    api<{ name: string }[]>('/categories/options').then(setCategories);
+  }, []);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((p) => {
-      if (filterCategory && p.category !== filterCategory) return false;
-      if (filterStatus && p.status !== filterStatus) return false;
-      if (!q) return true;
-      return [p.code, p.name, p.brand, p.category].some((v) => String(v).toLowerCase().includes(q));
-    });
-  }, [rows, filterCategory, filterStatus, search]);
-
-  const exportCsv = () => {
-    if (filtered.length === 0) {
+  const exportCsv = async () => {
+    const all = await list.fetchAll();
+    if (all.length === 0) {
       notify.warning('Không có dữ liệu để xuất.');
       return;
     }
     const csv = toCsvRowNumber(
-      filtered,
+      all,
       ['STT', 'Mã', 'Tên', 'Hãng', 'Công ty', 'Đơn vị', 'Tồn hiện tại', 'Ngưỡng cảnh báo', 'Trạng thái'],
       (row, index) => [
         index + 1, row.code, row.name, row.brand || '', row.category, row.unit,
@@ -55,39 +55,79 @@ export default function StockPage() {
         </button>
       }
     >
+      <div className="toolbar">
+        <div className="toolbar__grow">
+          <input
+            type="search"
+            className="input"
+            placeholder="Tìm mã, tên, hãng, công ty..."
+            autoComplete="off"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <SelectAutocomplete
+          value={filterCategory}
+          onChange={setFilterCategory}
+          placeholder="Tìm công ty..."
+          options={[
+            { value: '', label: 'Tất cả công ty' },
+            ...categories.map((c) => ({ value: c.name, label: c.name })),
+          ]}
+        />
+        <SelectAutocomplete
+          value={filterStatus}
+          onChange={setFilterStatus}
+          placeholder="Tìm trạng thái..."
+          options={[
+            { value: '', label: 'Tất cả trạng thái' },
+            { value: 'OK', label: 'Đủ hàng' },
+            { value: 'LOW', label: 'Sắp hết' },
+            { value: 'OUT', label: 'Hết hàng' },
+          ]}
+        />
+        {(search || filterCategory || filterStatus) && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => {
+              setSearch('');
+              setFilterCategory('');
+              setFilterStatus('');
+            }}
+          >
+            Xóa lọc
+          </button>
+        )}
+      </div>
+
       <DataTable
-        rows={filtered as unknown as Record<string, unknown>[]}
+        serverMode
+        rows={list.items as unknown as Record<string, unknown>[]}
+        total={list.total}
+        page={list.page}
+        pageSizeControlled={list.pageSize}
+        onPageChange={list.setPage}
+        onPageSizeChange={list.setPageSize}
+        sortKey={list.sortKey}
+        sortDir={list.sortDir}
+        onSortChange={list.setSort}
+        loading={list.loading}
         showSearch={false}
         externalSearch={search}
         showStt
-        defaultSort={{ key: 'code', direction: 'asc' }}
-        getSortValue={(row, field) => (field === 'status' ? row.status : row[field])}
         rowClassName={(row) => `row-status-${String(row.status).toLowerCase()}`}
         emptyTitle="Không có sản phẩm"
         emptyDesc="Thử đổi bộ lọc hoặc thêm sản phẩm mới."
-        toolbar={
-          <>
-            <select className="select" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ minWidth: 160 }}>
-              <option value="">Tất cả công ty</option>
-              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ minWidth: 150 }}>
-              <option value="">Tất cả trạng thái</option>
-              <option value="OK">Đủ hàng</option>
-              <option value="LOW">Sắp hết</option>
-              <option value="OUT">Hết hàng</option>
-            </select>
-          </>
-        }
         columns={[
           { key: 'code', label: 'Mã', sortable: true, render: (r) => <span className="mono">{String(r.code)}</span> },
           { key: 'name', label: 'Tên', sortable: true },
           { key: 'brand', label: 'Hãng', render: (r) => String(r.brand || '—') },
-          { key: 'category', label: 'Công ty' },
+          { key: 'category', label: 'Công ty', sortable: true },
           { key: 'unit', label: 'Đơn vị' },
           { key: 'stock', label: 'Tồn', sortable: true, className: 'text-right', render: (r) => <strong>{formatNumber(Number(r.stock))}</strong> },
           { key: 'warningStock', label: 'Ngưỡng cảnh báo', className: 'text-right', render: (r) => formatNumber(Number(r.warningStock)) },
-          { key: 'status', label: 'Trạng thái', render: (r) => <StatusBadge status={String(r.status)} /> },
+          { key: 'status', label: 'Trạng thái', sortable: true, render: (r) => <StatusBadge status={String(r.status)} /> },
         ]}
       />
     </Panel>

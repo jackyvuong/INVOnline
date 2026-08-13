@@ -4,9 +4,10 @@ public static class ServiceHelpers
 {
     public static DateTimeOffset ParseLegacyDateTime(string value)
     {
-        if (DateTimeOffset.TryParse(value, out var dto)) return dto;
+        if (DateTimeOffset.TryParse(value, out var dto))
+            return dto.ToUniversalTime();
         if (DateTime.TryParseExact(value, "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.AssumeLocal, out var dt))
-            return new DateTimeOffset(dt);
+            return new DateTimeOffset(dt, TimeZoneInfo.Local.GetUtcOffset(dt)).ToUniversalTime();
         return DateTimeOffset.UtcNow;
     }
 

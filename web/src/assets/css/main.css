@@ -587,6 +587,24 @@ img {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
+  position: relative;
+}
+
+.table-wrap--loading .table {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.table-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  z-index: 3;
 }
 
 .table {
@@ -1270,6 +1288,11 @@ input[readonly].input--readonly {
   min-width: 160px;
   width: auto;
   flex: 0 1 240px;
+}
+
+.toolbar .autocomplete--wide {
+  min-width: 220px;
+  flex: 1 1 280px;
 }
 
 /* ========== Responsive ========== */

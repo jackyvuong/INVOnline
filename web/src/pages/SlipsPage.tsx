@@ -6,8 +6,10 @@ import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import NoteCell from '../components/NoteCell';
 import { Panel } from '../components/Panel';
+import SelectAutocomplete from '../components/SelectAutocomplete';
 import { SLIP_STATUS_LABELS } from '../constants';
 import { useGlobalSearch } from '../context/SearchContext';
+import { usePagedList } from '../hooks/usePagedList';
 import { formatNumber, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
@@ -73,16 +75,6 @@ const IMPORT_CONFIG: SlipConfig = {
   emptyDesc: 'Nhấn "Tạo phiếu nhập" để bắt đầu.',
 };
 
-function slipStats(items: SlipItem[] = []) {
-  return {
-    itemCount: items.length,
-    totalQty: items.reduce((s, i) => s + Number(i.quantity || 0), 0),
-  };
-}
-
-function toDateOnly(value: unknown) {
-  return String(value ?? '').slice(0, 10);
-}
 
 function defaultForm(products: Product[]) {
   return {
@@ -97,7 +89,6 @@ function defaultForm(products: Product[]) {
 function SlipFormPage({ config }: { config: SlipConfig }) {
   const { confirmDialog } = useConfirm();
   const { search, setSearch } = useGlobalSearch();
-  const [rows, setRows] = useState<Slip[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
@@ -106,32 +97,36 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [filters, setFilters] = useState({ status: '', dateFrom: '', dateTo: '' });
 
-  const load = async () => {
-    const [s, p] = await Promise.all([api<Slip[]>(config.base), api<Product[]>('/products')]);
-    setRows(s);
-    setProducts(p);
-  };
-  useEffect(() => { load(); }, [config.base]);
+  const apiFilters = useMemo(() => ({
+    status: filters.status,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  }), [filters]);
+
+  const list = usePagedList<Slip & { party?: string; itemCount?: number; totalQty?: number }>(config.base, {
+    defaultSort: { key: 'slipDate', direction: 'desc' },
+    search,
+    filters: apiFilters,
+  });
+
+  useEffect(() => {
+    api<Product[]>('/products/options').then(setProducts);
+  }, []);
 
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
-  const enriched = useMemo(() => rows.map((s) => {
-    const stats = slipStats(s.items);
-    const party = config.partyField === 'recipient' ? s.recipient : s.supplier;
-    return { ...s, ...stats, party };
-  }), [rows, config.partyField]);
+  const parseItems = (items: unknown): SlipItem[] => {
+    if (Array.isArray(items)) return items as SlipItem[];
+    if (typeof items === 'string') {
+      try { return JSON.parse(items) as SlipItem[]; } catch { return []; }
+    }
+    return [];
+  };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return enriched.filter((s) => {
-      if (filters.status && s.status !== filters.status) return false;
-      const day = toDateOnly(s.slipDate);
-      if (filters.dateFrom && day.localeCompare(filters.dateFrom) < 0) return false;
-      if (filters.dateTo && day.localeCompare(filters.dateTo) > 0) return false;
-      if (!q) return true;
-      return [s.code, s.party, s.note].some((v) => String(v ?? '').toLowerCase().includes(q));
-    });
-  }, [enriched, filters, search]);
+  const reloadAll = () => {
+    list.reload();
+    api<Product[]>('/products/options').then(setProducts);
+  };
 
   const canEdit = !viewOnly && (!editing || editing.status === 'PROCESSING');
 
@@ -143,15 +138,16 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
     setOpen(true);
   };
 
-  const openSlip = (s: Slip, readonly: boolean) => {
+  const openSlip = (s: Slip & { party?: string }, readonly: boolean) => {
     setEditing(s);
     setViewOnly(readonly);
+    const items = parseItems(s.items);
     setForm({
       slipDate: String(s.slipDate).slice(0, 16).replace('T', ' '),
       recipient: s.recipient || '',
       supplier: s.supplier || '',
       note: s.note || '',
-      items: s.items?.length ? s.items.map((i) => ({ ...i })) : [{ productId: products[0]?.id || 0, quantity: 1, note: '' }],
+      items: items.length ? items.map((i) => ({ ...i })) : [{ productId: products[0]?.id || 0, quantity: 1, note: '' }],
     });
     setErrors({});
     setOpen(true);
@@ -171,7 +167,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
       if (editing && !viewOnly) await api(`${config.base}/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
       else if (!editing) await api(config.base, { method: 'POST', body: JSON.stringify(payload) });
       setOpen(false);
-      load();
+      reloadAll();
       notify.success(editing ? `Đã cập nhật phiếu ${config.type === 'export' ? 'xuất' : 'nhập'}.` : 'Đã tạo phiếu.');
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string>; message?: string };
@@ -193,13 +189,13 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
       }
       const result = await api<Slip>(`${config.base}/${slipId}/complete`, { method: 'POST' });
       setOpen(false);
-      load();
+      reloadAll();
       notify.success(`Đã hoàn thành phiếu ${result.code}. Tồn kho đã được cập nhật.`);
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string>; message?: string };
       setErrors(err.errors || { _: err.message || 'Lỗi' });
       notify.error(err.message || 'Không hoàn thành được phiếu.');
-      load();
+      reloadAll();
     }
   };
 
@@ -214,7 +210,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
         });
         if (!ok) return;
         await api(`${config.base}/${id}`, { method: 'DELETE' });
-        load();
+        reloadAll();
         notify.success(`Đã xóa phiếu ${config.type === 'export' ? 'xuất' : 'nhập'}.`);
         return;
       }
@@ -227,12 +223,12 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
         });
         if (!ok) return;
         await api(`${config.base}/${id}/return`, { method: 'POST' });
-        load();
+        reloadAll();
         notify.success(`Đã hoàn trả phiếu ${code}. Tồn kho đã được cập nhật.`);
         return;
       }
       const copied = await api<Slip>(`${config.base}/${id}/copy`, { method: 'POST' });
-      load();
+      reloadAll();
       notify.success(`Đã sao chép thành phiếu ${copied.code}.`);
       openSlip(copied, false);
     } catch (e: unknown) {
@@ -295,21 +291,35 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
           <div className="toolbar__grow">
             <input type="search" className="input" placeholder="Tìm mã phiếu, người nhận, ghi chú..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <select className="select" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} style={{ minWidth: 150 }}>
-            <option value="">Tất cả trạng thái</option>
-            <option value="PROCESSING">Đang xử lý</option>
-            <option value="COMPLETED">Hoàn thành</option>
-            <option value="RETURNED">Hoàn trả</option>
-          </select>
+          <SelectAutocomplete
+            value={filters.status}
+            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+            placeholder="Tìm trạng thái..."
+            options={[
+              { value: '', label: 'Tất cả trạng thái' },
+              { value: 'PROCESSING', label: 'Đang xử lý' },
+              { value: 'COMPLETED', label: 'Hoàn thành' },
+              { value: 'RETURNED', label: 'Hoàn trả' },
+            ]}
+          />
           <input type="date" className="input" title="Từ ngày" style={{ width: 'auto' }} value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
           <input type="date" className="input" title="Đến ngày" style={{ width: 'auto' }} value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
           <button type="button" className="btn btn--ghost" onClick={() => { setSearch(''); setFilters({ status: '', dateFrom: '', dateTo: '' }); }}>Xóa lọc</button>
         </div>
 
         <DataTable
-          rows={filtered as unknown as Record<string, unknown>[]}
+          serverMode
+          rows={list.items as unknown as Record<string, unknown>[]}
+          total={list.total}
+          page={list.page}
+          pageSizeControlled={list.pageSize}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          sortKey={list.sortKey}
+          sortDir={list.sortDir}
+          onSortChange={list.setSort}
+          loading={list.loading}
           showSearch={false}
-          defaultSort={{ key: 'slipDate', direction: 'desc' }}
           emptyTitle={config.emptyTitle}
           emptyDesc={config.emptyDesc}
           columns={[
@@ -402,10 +412,19 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
                 return (
                   <tr key={idx}>
                     <td>
-                      <select className="select" disabled={!canEdit} value={item.productId} onChange={(e) => updateItem(idx, { productId: Number(e.target.value) })}>
-                        <option value={0}>-- Chọn sản phẩm --</option>
-                        {products.map((pr) => <option key={pr.id} value={pr.id}>{pr.code} — {pr.name}</option>)}
-                      </select>
+                      <SelectAutocomplete
+                        disabled={!canEdit}
+                        value={item.productId ? String(item.productId) : ''}
+                        onChange={(v) => updateItem(idx, { productId: Number(v) || 0 })}
+                        placeholder="Tìm sản phẩm..."
+                        options={[
+                          { value: '', label: '-- Chọn sản phẩm --' },
+                          ...products.map((pr) => ({
+                            value: String(pr.id),
+                            label: `${pr.code} — ${pr.name}`,
+                          })),
+                        ]}
+                      />
                     </td>
                     <td>{p?.brand || '—'}</td>
                     <td className="text-right mono">{p ? `${formatNumber(p.stock)} ${p.unit}` : '—'}</td>

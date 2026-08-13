@@ -4,16 +4,14 @@ import { TypeBadge } from '../components/Badge';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import { Panel } from '../components/Panel';
+import SelectAutocomplete from '../components/SelectAutocomplete';
 import { useGlobalSearch } from '../context/SearchContext';
 import { formatNumber } from '../constants';
+import { usePagedList } from '../hooks/usePagedList';
 import { notify } from '../utils/notification';
 
 type Tx = Record<string, unknown>;
 type Product = { id: number; code: string; name: string; stock: number; unit: string; category: string; brand: string };
-
-function toDateOnly(value: unknown) {
-  return String(value ?? '').slice(0, 10);
-}
 
 function defaultForm(products: Product[]) {
   return {
@@ -27,7 +25,6 @@ function defaultForm(products: Product[]) {
 
 export default function TransactionsPage() {
   const { search, setSearch } = useGlobalSearch();
-  const [rows, setRows] = useState<Tx[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
   const [filters, setFilters] = useState({
@@ -40,32 +37,28 @@ export default function TransactionsPage() {
   const [form, setForm] = useState(defaultForm([]));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const load = async () => {
-    const [tx, p] = await Promise.all([api<Tx[]>('/transactions'), api<Product[]>('/products')]);
-    setRows(tx);
-    setProducts(p);
-  };
-  useEffect(() => { load(); }, []);
+  const apiFilters = useMemo(() => ({
+    type: filters.type,
+    category: filters.category,
+    productId: filters.productId || undefined,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  }), [filters]);
+
+  const list = usePagedList<Tx>('/transactions', {
+    defaultSort: { key: 'movementAt', direction: 'desc' },
+    search,
+    filters: apiFilters,
+  });
+
+  useEffect(() => {
+    api<Product[]>('/products/options').then(setProducts);
+  }, []);
 
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi')),
     [products]
   );
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((tx) => {
-      if (filters.type && tx.type !== filters.type) return false;
-      if (filters.category && tx.companyName !== filters.category) return false;
-      if (filters.productId && String(tx.productId) !== filters.productId) return false;
-      const day = toDateOnly(tx.movementAt);
-      if (filters.dateFrom && day.localeCompare(filters.dateFrom) < 0) return false;
-      if (filters.dateTo && day.localeCompare(filters.dateTo) > 0) return false;
-      if (!q) return true;
-      return [tx.productCode, tx.productName, tx.companyName, tx.productBrand, tx.note, tx.type]
-        .map((x) => String(x ?? '').toLowerCase()).join(' ').includes(q);
-    });
-  }, [rows, filters, search]);
 
   const selectedProduct = products.find((p) => p.id === form.productId);
 
@@ -88,7 +81,8 @@ export default function TransactionsPage() {
     try {
       await api('/transactions', { method: 'POST', body: JSON.stringify(payload) });
       setOpen(false);
-      load();
+      list.reload();
+      api<Product[]>('/products/options').then(setProducts);
       notify.success('Đã tạo giao dịch.');
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string>; message?: string };
@@ -123,39 +117,64 @@ export default function TransactionsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select className="select" value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))} style={{ minWidth: 140 }}>
-            <option value="">Tất cả loại</option>
-            <option value="IN">Nhập kho</option>
-            <option value="OUT">Xuất kho</option>
-            <option value="ADJUST">Điều chỉnh</option>
-          </select>
-          <select className="select" value={filters.category} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))} style={{ minWidth: 160 }}>
-            <option value="">Tất cả công ty</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select className="select" value={filters.productId} onChange={(e) => setFilters((f) => ({ ...f, productId: e.target.value }))} style={{ minWidth: 220 }}>
-            <option value="">Tất cả sản phẩm</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>{p.code} — {p.name} (Tồn: {formatNumber(p.stock)})</option>
-            ))}
-          </select>
+          <SelectAutocomplete
+            value={filters.type}
+            onChange={(v) => setFilters((f) => ({ ...f, type: v }))}
+            placeholder="Tìm loại..."
+            options={[
+              { value: '', label: 'Tất cả loại' },
+              { value: 'IN', label: 'Nhập kho' },
+              { value: 'OUT', label: 'Xuất kho' },
+              { value: 'ADJUST', label: 'Điều chỉnh' },
+            ]}
+          />
+          <SelectAutocomplete
+            value={filters.category}
+            onChange={(v) => setFilters((f) => ({ ...f, category: v }))}
+            placeholder="Tìm công ty..."
+            options={[
+              { value: '', label: 'Tất cả công ty' },
+              ...categories.map((c) => ({ value: c, label: c })),
+            ]}
+          />
+          <SelectAutocomplete
+            className="autocomplete--wide"
+            value={filters.productId}
+            onChange={(v) => setFilters((f) => ({ ...f, productId: v }))}
+            placeholder="Tìm sản phẩm..."
+            options={[
+              { value: '', label: 'Tất cả sản phẩm' },
+              ...products.map((p) => ({
+                value: String(p.id),
+                label: `${p.code} — ${p.name} (Tồn: ${formatNumber(p.stock)})`,
+              })),
+            ]}
+          />
           <input type="date" className="input" title="Từ ngày" style={{ width: 'auto' }} value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
           <input type="date" className="input" title="Đến ngày" style={{ width: 'auto' }} value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
           <button type="button" className="btn btn--ghost" onClick={clearFilters}>Xóa lọc</button>
         </div>
 
         <DataTable
+          serverMode
+          rows={list.items}
+          total={list.total}
+          page={list.page}
+          pageSizeControlled={list.pageSize}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          sortKey={list.sortKey}
+          sortDir={list.sortDir}
+          onSortChange={list.setSort}
+          loading={list.loading}
           showSearch={false}
-          rows={filtered}
-          defaultSort={{ key: 'movementAt', direction: 'desc' }}
-          getSortValue={(row, key) => (key === 'movementAt' ? row.movementAt : row[key])}
           emptyTitle="Chưa có giao dịch"
           emptyDesc='Nhấn "+ Tạo giao dịch" để bắt đầu.'
           columns={[
-            { key: 'movementAt', label: 'Ngày', sortable: true, render: (r) => String(r.movementAt).slice(0, 16).replace('T', ' ') },
+            { key: 'movementAt', label: 'Ngày', sortable: true, render: (r) => String(r.movementAt ?? '').slice(0, 16).replace('T', ' ') || '—' },
             { key: 'type', label: 'Loại', sortable: true, render: (r) => <TypeBadge type={String(r.type)} /> },
-            { key: 'productCode', label: 'Mã sản phẩm', sortable: true, render: (r) => <span className="mono">{String(r.productCode)}</span> },
-            { key: 'productName', label: 'Tên', sortable: true },
+            { key: 'productCode', label: 'Mã sản phẩm', sortable: true, render: (r) => <span className="mono">{String(r.productCode || '—')}</span> },
+            { key: 'productName', label: 'Tên', sortable: true, render: (r) => String(r.productName || '—') },
             { key: 'companyName', label: 'Công Ty', sortable: true, render: (r) => String(r.companyName || '—') },
             { key: 'productBrand', label: 'Hãng', sortable: true, render: (r) => String(r.productBrand || '—') },
             {
@@ -185,12 +204,18 @@ export default function TransactionsPage() {
           </div>
           <div className="field full">
             <label>Sản phẩm *
-              <select className="select" value={form.productId} onChange={(e) => setForm({ ...form, productId: Number(e.target.value) })}>
-                <option value={0}>-- Chọn sản phẩm --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.code} — {p.name} (Tồn: {formatNumber(p.stock)})</option>
-                ))}
-              </select>
+              <SelectAutocomplete
+                value={form.productId ? String(form.productId) : ''}
+                onChange={(v) => setForm({ ...form, productId: Number(v) || 0 })}
+                placeholder="Tìm / chọn sản phẩm..."
+                options={[
+                  { value: '', label: '-- Chọn sản phẩm --' },
+                  ...products.map((p) => ({
+                    value: String(p.id),
+                    label: `${p.code} — ${p.name} (Tồn: ${formatNumber(p.stock)})`,
+                  })),
+                ]}
+              />
             </label>
             {selectedProduct && <div className="stock-preview">Tồn hiện tại: {formatNumber(selectedProduct.stock)} {selectedProduct.unit}</div>}
             {errors.productId && <span className="field-error">{errors.productId}</span>}
