@@ -51,7 +51,6 @@ export default function LoginPage() {
               width={320}
               logo_alignment="center"
               useOneTap={false}
-              locale="vi"
             />
           )}
         </div>
