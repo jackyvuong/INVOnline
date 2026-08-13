@@ -78,11 +78,12 @@ app.Use(async (ctx, next) =>
     {
         ctx.Response.Headers["Access-Control-Allow-Origin"] = origin;
         ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
         ctx.Response.Headers["Vary"] = "Origin";
     }
 
-    if (HttpMethods.IsOptions(ctx.Request.Method))
+    if (HttpMethods.IsOptions(ctx.Request.Method) &&
+        !ctx.Request.Path.StartsWithSegments("/health"))
     {
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
         return;
@@ -96,7 +97,9 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+var healthOk = () => Results.Ok(new { status = "ok" });
+app.MapMethods("/health", ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], healthOk)
+    .AllowAnonymous();
 app.MapGet("/health/cors", () => Results.Ok(new { origins = corsOrigins }));
 app.MapGet("/health/db", async (DbConnectionFactory db) =>
 {
