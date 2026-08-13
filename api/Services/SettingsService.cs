@@ -10,21 +10,40 @@ public class SettingsService(DbConnectionFactory db, LegacyImportService legacyI
     public async Task<object> ExportAsync()
     {
         await using var conn = db.Create();
+        const string ts = "to_char({0} AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD HH24:MI')";
         return new
         {
             version = "1.0.0",
-            exportedAt = DateTimeOffset.UtcNow,
-            categories = await conn.QueryAsync("SELECT legacy_id AS id, code, name, description, created_at AS \"createdAt\", updated_at AS \"updatedAt\" FROM categories ORDER BY legacy_id"),
-            products = await conn.QueryAsync(@"SELECT legacy_id AS id, code, name, category_name AS category, unit, brand, description, note,
-                warning_stock AS ""warningStock"", stock, created_at AS ""createdAt"", updated_at AS ""updatedAt"" FROM products ORDER BY legacy_id"),
-            transactions = await conn.QueryAsync(@"SELECT t.legacy_id AS id, t.movement_at AS date, p.legacy_id AS ""productId"", t.type, t.quantity, t.note
-                FROM transactions t JOIN products p ON p.id = t.product_id ORDER BY t.legacy_id"),
-            exportSlips = await conn.QueryAsync(@"SELECT legacy_id AS id, code, slip_date AS date, recipient, note, status, items,
-                out_transaction_ids AS ""outTransactionIds"", return_transaction_ids AS ""returnTransactionIds"",
-                created_at AS ""createdAt"", updated_at AS ""updatedAt"" FROM export_slips ORDER BY legacy_id"),
-            importSlips = await conn.QueryAsync(@"SELECT legacy_id AS id, code, slip_date AS date, supplier, note, status, items,
-                in_transaction_ids AS ""inTransactionIds"", return_transaction_ids AS ""returnTransactionIds"",
-                created_at AS ""createdAt"", updated_at AS ""updatedAt"" FROM import_slips ORDER BY legacy_id"),
+            exportedAt = ServiceHelpers.FormatLegacyDateTime(DateTimeOffset.Now),
+            categories = await conn.QueryAsync(
+                $@"SELECT legacy_id AS id, code, name, description,
+                   {string.Format(ts, "created_at")} AS {PaginationHelper.Alias("createdAt")},
+                   {string.Format(ts, "updated_at")} AS {PaginationHelper.Alias("updatedAt")}
+                   FROM categories ORDER BY legacy_id"),
+            products = await conn.QueryAsync(
+                $@"SELECT legacy_id AS id, code, name, category_name AS category, unit, brand, description, note,
+                   warning_stock AS {PaginationHelper.Alias("warningStock")}, stock,
+                   {string.Format(ts, "created_at")} AS {PaginationHelper.Alias("createdAt")},
+                   {string.Format(ts, "updated_at")} AS {PaginationHelper.Alias("updatedAt")}
+                   FROM products ORDER BY legacy_id"),
+            transactions = await conn.QueryAsync(
+                $@"SELECT t.legacy_id AS id, {string.Format(ts, "t.movement_at")} AS date,
+                   p.legacy_id AS {PaginationHelper.Alias("productId")}, t.type, t.quantity, t.note
+                   FROM transactions t JOIN products p ON p.id = t.product_id ORDER BY t.legacy_id"),
+            exportSlips = await conn.QueryAsync(
+                $@"SELECT legacy_id AS id, code, {string.Format(ts, "slip_date")} AS date, recipient, note, status, items,
+                   out_transaction_ids AS {PaginationHelper.Alias("outTransactionIds")},
+                   return_transaction_ids AS {PaginationHelper.Alias("returnTransactionIds")},
+                   {string.Format(ts, "created_at")} AS {PaginationHelper.Alias("createdAt")},
+                   {string.Format(ts, "updated_at")} AS {PaginationHelper.Alias("updatedAt")}
+                   FROM export_slips ORDER BY legacy_id"),
+            importSlips = await conn.QueryAsync(
+                $@"SELECT legacy_id AS id, code, {string.Format(ts, "slip_date")} AS date, supplier, note, status, items,
+                   in_transaction_ids AS {PaginationHelper.Alias("inTransactionIds")},
+                   return_transaction_ids AS {PaginationHelper.Alias("returnTransactionIds")},
+                   {string.Format(ts, "created_at")} AS {PaginationHelper.Alias("createdAt")},
+                   {string.Format(ts, "updated_at")} AS {PaginationHelper.Alias("updatedAt")}
+                   FROM import_slips ORDER BY legacy_id"),
         };
     }
 

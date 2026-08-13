@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../api/client';
+import { api, downloadJson } from '../api/client';
 import { useConfirm } from '../components/ConfirmProvider';
 import Modal from '../components/Modal';
 import { Panel } from '../components/Panel';
@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { confirmDialog } = useConfirm();
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [userOpen, setUserOpen] = useState(false);
   const [userForm, setUserForm] = useState({ email: '', displayName: '' });
@@ -40,6 +41,20 @@ export default function SettingsPage() {
 
   const loadUsers = () => api<AppUser[]>('/users').then(setUsers);
   useEffect(() => { loadUsers(); }, []);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const data = await api<Record<string, unknown>>('/settings/export');
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+      downloadJson(`qltk-backup-${stamp}.json`, data);
+      notify.success('Đã tải file JSON backup về máy.');
+    } catch (err: unknown) {
+      notify.error((err as { message?: string }).message || 'Export thất bại.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleImport = async (file: File) => {
     let text: string;
@@ -108,13 +123,23 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Panel title="Import dữ liệu">
-        <p className="field-hint">Chọn file JSON export từ app cũ (Cài đặt → Export, hoặc file backup).</p>
+      <Panel title="Sao lưu dữ liệu">
+        <p className="field-hint">
+          Export tải file JSON về máy để backup. Import dùng file này (hoặc file từ app cũ) để khôi phục — sẽ ghi đè toàn bộ dữ liệu hiện tại.
+        </p>
         <div className="toolbar toolbar--compact">
           <button
             type="button"
             className="btn btn--primary"
-            disabled={importing}
+            disabled={exporting || importing}
+            onClick={handleExport}
+          >
+            {exporting ? 'Đang export...' : 'Export JSON'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={importing || exporting}
             onClick={() => fileRef.current?.click()}
           >
             {importing ? 'Đang import...' : 'Import JSON'}
