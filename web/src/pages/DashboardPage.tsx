@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { StatusBadge, TypeBadge } from '../components/Badge';
 import { formatNumber, STOCK_STATUS_LABELS } from '../constants';
+import { formatDateTime } from '../utils/format';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ totalProducts: 0, totalStock: 0, lowCount: 0, outCount: 0 });
@@ -66,7 +67,7 @@ export default function DashboardPage() {
                   ) : (
                     recent.map((tx, i) => (
                       <tr key={i}>
-                        <td>{String(tx.movementAt ?? '').slice(0, 16).replace('T', ' ')}</td>
+                        <td>{formatDateTime(String(tx.movementAt ?? '')) || '—'}</td>
                         <td>
                           <TypeBadge type={String(tx.type)} />
                         </td>

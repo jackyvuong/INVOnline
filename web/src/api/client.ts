@@ -110,15 +110,4 @@ export function slipStatusLabel(s: string) {
   return s;
 }
 
-export function nowDateTime() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Convert "YYYY-MM-DD HH:mm" to ISO so ASP.NET binds DateTimeOffset. */
-export function toApiDateTime(value: string) {
-  const s = String(value || '').trim().replace(' ', 'T');
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return `${s}:00`;
-  return s;
-}
+export { nowDateTime, toApiDateTime } from '../utils/format';

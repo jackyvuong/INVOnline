@@ -768,6 +768,39 @@ img {
   width: 170px;
 }
 
+.date-input {
+  position: relative;
+  display: inline-block;
+  width: 148px;
+  flex: 0 0 auto;
+}
+
+.date-input .input {
+  width: 100%;
+  padding-right: 34px;
+}
+
+.date-input__native {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+}
+
+.date-input__native::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  opacity: 0.7;
+}
+
 .report-filters__action {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@ import { api, downloadJson } from '../api/client';
 import { useConfirm } from '../components/ConfirmProvider';
 import Modal from '../components/Modal';
 import { Panel } from '../components/Panel';
+import { formatDateTime } from '../utils/format';
 import { notify } from '../utils/notification';
 
 type AppUser = {
@@ -25,8 +26,7 @@ function previewLegacyJson(text: string) {
 
 function formatWhen(iso?: string | null) {
   if (!iso) return 'Chưa đăng nhập';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('vi-VN');
+  return formatDateTime(iso) || iso;
 }
 
 export default function SettingsPage() {

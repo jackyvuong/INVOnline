@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, nowDateTime } from '../api/client';
+import { api, nowDateTime, toApiDateTime } from '../api/client';
 import { TypeBadge } from '../components/Badge';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import { Panel } from '../components/Panel';
+import DateInput from '../components/DateInput';
 import SelectAutocomplete from '../components/SelectAutocomplete';
 import { useGlobalSearch } from '../context/SearchContext';
 import { formatNumber } from '../constants';
+import { formatDateTime } from '../utils/format';
 import { usePagedList } from '../hooks/usePagedList';
 import { notify } from '../utils/notification';
 
@@ -77,7 +79,7 @@ export default function TransactionsPage() {
 
   const save = async () => {
     const quantity = Number(form.quantityStr);
-    const payload = { date: form.date, type: form.type, productId: form.productId, quantity, note: form.note };
+    const payload = { date: toApiDateTime(form.date), type: form.type, productId: form.productId, quantity, note: form.note };
     try {
       await api('/transactions', { method: 'POST', body: JSON.stringify(payload) });
       setOpen(false);
@@ -150,8 +152,8 @@ export default function TransactionsPage() {
               })),
             ]}
           />
-          <input type="date" className="input" title="Từ ngày" style={{ width: 'auto' }} value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
-          <input type="date" className="input" title="Đến ngày" style={{ width: 'auto' }} value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
+          <DateInput title="Từ ngày" value={filters.dateFrom} onChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))} />
+          <DateInput title="Đến ngày" value={filters.dateTo} onChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))} />
           <button type="button" className="btn btn--ghost" onClick={clearFilters}>Xóa lọc</button>
         </div>
 
@@ -171,7 +173,7 @@ export default function TransactionsPage() {
           emptyTitle="Chưa có giao dịch"
           emptyDesc='Nhấn "+ Tạo giao dịch" để bắt đầu.'
           columns={[
-            { key: 'movementAt', label: 'Ngày', sortable: true, render: (r) => String(r.movementAt ?? '').slice(0, 16).replace('T', ' ') || '—' },
+            { key: 'movementAt', label: 'Ngày', sortable: true, render: (r) => formatDateTime(String(r.movementAt ?? '')) || '—' },
             { key: 'type', label: 'Loại', sortable: true, render: (r) => <TypeBadge type={String(r.type)} /> },
             { key: 'productCode', label: 'Mã sản phẩm', sortable: true, render: (r) => <span className="mono">{String(r.productCode || '—')}</span> },
             { key: 'productName', label: 'Tên', sortable: true, render: (r) => String(r.productName || '—') },
@@ -191,7 +193,7 @@ export default function TransactionsPage() {
         {errors._ && <p className="field-error">{errors._}</p>}
         <div className="form-grid">
           <div className="field">
-            <label>Ngày *<input value={form.date} placeholder="YYYY-MM-DD HH:mm" onChange={(e) => setForm({ ...form, date: e.target.value })} /></label>
+            <label>Ngày *<input value={form.date} placeholder="DD-MM-YYYY HH:mm" onChange={(e) => setForm({ ...form, date: e.target.value })} /></label>
           </div>
           <div className="field">
             <label>Loại *

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, downloadCsv } from '../api/client';
 import DataTable from '../components/DataTable';
+import DateInput from '../components/DateInput';
 import { Panel } from '../components/Panel';
 import { useGlobalSearch } from '../context/SearchContext';
 import { formatNumber, todayDate, toCsvRowNumber } from '../utils/format';
@@ -84,13 +85,13 @@ export default function ReportPage() {
       >
         <div className="field" style={{ margin: 0 }}>
           <label>Từ ngày
-            <input type="date" id="report-from" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DateInput id="report-from" title="Từ ngày" value={from} onChange={setFrom} />
           </label>
           {errors.fromDate && <span className="field-error">{errors.fromDate}</span>}
         </div>
         <div className="field" style={{ margin: 0 }}>
           <label>Đến ngày
-            <input type="date" id="report-to" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DateInput id="report-to" title="Đến ngày" value={to} onChange={setTo} />
           </label>
           {errors.toDate && <span className="field-error">{errors.toDate}</span>}
         </div>

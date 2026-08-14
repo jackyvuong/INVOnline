@@ -6,11 +6,12 @@ import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import NoteCell from '../components/NoteCell';
 import { Panel } from '../components/Panel';
+import DateInput from '../components/DateInput';
 import SelectAutocomplete from '../components/SelectAutocomplete';
 import { SLIP_STATUS_LABELS } from '../constants';
 import { useGlobalSearch } from '../context/SearchContext';
 import { usePagedList } from '../hooks/usePagedList';
-import { formatNumber, toCsvRowNumber } from '../utils/format';
+import { formatDateTime, formatNumber, toCsvRowNumber } from '../utils/format';
 import { notify } from '../utils/notification';
 
 type SlipItem = { productId: number; quantity: number; note: string };
@@ -168,7 +169,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
       productId: resolveProductId(i.productId) || i.productId,
     }));
     setForm({
-      slipDate: String(s.slipDate).slice(0, 16).replace('T', ' '),
+      slipDate: formatDateTime(s.slipDate),
       recipient: s.recipient || '',
       supplier: s.supplier || '',
       note: s.note || '',
@@ -333,8 +334,8 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
               { value: 'RETURNED', label: 'Hoàn trả' },
             ]}
           />
-          <input type="date" className="input" title="Từ ngày" style={{ width: 'auto' }} value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
-          <input type="date" className="input" title="Đến ngày" style={{ width: 'auto' }} value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
+          <DateInput title="Từ ngày" value={filters.dateFrom} onChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))} />
+          <DateInput title="Đến ngày" value={filters.dateTo} onChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))} />
           <button type="button" className="btn btn--ghost" onClick={() => { setSearch(''); setFilters({ status: '', dateFrom: '', dateTo: '' }); }}>Xóa lọc</button>
         </div>
 
@@ -355,7 +356,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
           emptyDesc={config.emptyDesc}
           columns={[
             { key: 'code', label: 'Mã', sortable: true, render: (r) => <span className="mono">{String(r.code)}</span> },
-            { key: 'slipDate', label: 'Ngày', sortable: true, render: (r) => String(r.slipDate).slice(0, 16).replace('T', ' ') },
+            { key: 'slipDate', label: 'Ngày', sortable: true, render: (r) => formatDateTime(r.slipDate) },
             { key: 'party', label: config.partyTableLabel, render: (r) => String(r.party || '—') },
             { key: 'itemCount', label: 'Số SP', sortable: true, className: 'text-right', render: (r) => formatNumber(Number(r.itemCount)) },
             { key: 'totalQty', label: 'Tổng SL', sortable: true, className: 'text-right', render: (r) => <strong>{formatNumber(Number(r.totalQty))}</strong> },
@@ -409,7 +410,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
             <label>Trạng thái<input readOnly value={statusDisplay} /></label>
           </div>
           <div className="field">
-            <label>Ngày *<input readOnly={!canEdit} value={form.slipDate} onChange={(e) => setForm({ ...form, slipDate: e.target.value })} /></label>
+            <label>Ngày *<input readOnly={!canEdit} value={form.slipDate} placeholder="DD-MM-YYYY HH:mm" onChange={(e) => setForm({ ...form, slipDate: e.target.value })} /></label>
           </div>
           <div className="field">
             <label>{config.partyLabel}
