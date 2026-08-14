@@ -201,13 +201,6 @@ public class ProductService(DbConnectionFactory db)
                 new { Code = input.Code.Trim(), Id = editingId });
             if (dup > 0) errors["code"] = "Mã sản phẩm đã tồn tại.";
         }
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            var dup = await conn.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM products WHERE LOWER(name) = LOWER(@Name) AND (@Id IS NULL OR id <> @Id)",
-                new { Name = input.Name.Trim(), Id = editingId });
-            if (dup > 0) errors["name"] = "Tên sản phẩm đã tồn tại.";
-        }
         return errors;
     }
 }

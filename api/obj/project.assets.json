@@ -712,7 +712,7 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\ecfdfc076d054d7d79bb99af96a7c19b\\nuget": {},
+    "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\b423bf3f206f9e4fe167b8eb3685eb8e\\nuget": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
@@ -721,7 +721,7 @@
       "projectUniqueName": "E:\\Core\\QuanLyTonKho\\inventoryonline\\api\\Inventory.Api.csproj",
       "projectName": "Inventory.Api",
       "projectPath": "E:\\Core\\QuanLyTonKho\\inventoryonline\\api\\Inventory.Api.csproj",
-      "packagesPath": "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\ecfdfc076d054d7d79bb99af96a7c19b\\nuget",
+      "packagesPath": "C:\\Users\\vuong\\AppData\\Local\\Temp\\cursor-sandbox-cache\\b423bf3f206f9e4fe167b8eb3685eb8e\\nuget",
       "outputPath": "E:\\Core\\QuanLyTonKho\\inventoryonline\\api\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
