@@ -12,7 +12,7 @@ export function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function parseDateTime(value: string | Date | null | undefined): Date | null {
+export function parseDateTime(value: unknown): Date | null {
   if (value == null || value === '') return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   const s = String(value).trim();
@@ -34,14 +34,14 @@ export function parseDateTime(value: string | Date | null | undefined): Date | n
 }
 
 /** UI date: dd/mm/yyyy */
-export function formatDate(value: string | Date | null | undefined): string {
+export function formatDate(value: unknown): string {
   const d = parseDateTime(value);
   if (!d) return '';
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 /** UI datetime: DD-MM-YYYY HH:mm */
-export function formatDateTime(value: string | Date | null | undefined): string {
+export function formatDateTime(value: unknown): string {
   const d = parseDateTime(value);
   if (!d) return value == null || value === '' ? '' : String(value);
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
