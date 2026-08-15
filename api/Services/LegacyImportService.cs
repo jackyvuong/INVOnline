@@ -121,7 +121,8 @@ public class LegacyImportService(DbConnectionFactory db)
             await conn.ExecuteAsync("DELETE FROM products", transaction: tx);
             await conn.ExecuteAsync("DELETE FROM categories", transaction: tx);
 
-            var prodMap = new Dictionary<int, long>();
+            var legacyIdToCode = new Dictionary<int, string>();
+            var codeToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             foreach (var c in normalized.Categories)
             {
                 var createdAt = ParseOptionalDate(c.CreatedAt);
@@ -145,6 +146,7 @@ public class LegacyImportService(DbConnectionFactory db)
             {
                 var createdAt = ParseOptionalDate(p.CreatedAt);
                 var updatedAt = ParseOptionalDate(p.UpdatedAt);
+                var code = (p.Code ?? "").Trim();
                 var id = await conn.QuerySingleAsync<long>(
                     @"INSERT INTO products (legacy_id, code, name, category_name, unit, brand, description, note, warning_stock, stock,
                       created_at, updated_at, created_by_email, updated_by_email)
@@ -153,7 +155,7 @@ public class LegacyImportService(DbConnectionFactory db)
                     new
                     {
                         LegacyId = p.Id,
-                        Code = p.Code,
+                        Code = code,
                         Name = p.Name,
                         Category = p.Category ?? "",
                         Unit = p.Unit,
@@ -166,13 +168,16 @@ public class LegacyImportService(DbConnectionFactory db)
                         UpdatedAt = updatedAt,
                         Email = email,
                     }, tx);
-                prodMap[p.Id] = id;
+                if (p.Id > 0 && !string.IsNullOrEmpty(code))
+                    legacyIdToCode[p.Id] = code;
+                if (!string.IsNullOrEmpty(code))
+                    codeToId[code] = id;
             }
 
             var skippedTx = 0;
             foreach (var t in normalized.Transactions)
             {
-                if (!prodMap.TryGetValue(t.ProductId, out var productId))
+                if (!TryResolveProductId(t.ProductId, null, legacyIdToCode, codeToId, out var productId))
                 {
                     skippedTx++;
                     continue;
@@ -210,7 +215,7 @@ public class LegacyImportService(DbConnectionFactory db)
                         Recipient = s.Recipient ?? "",
                         Note = s.Note ?? "",
                         Status = s.Status,
-                        Items = RemapSlipItems(s.Items, prodMap),
+                        Items = RemapSlipItems(s.Items, legacyIdToCode, codeToId),
                         OutIds = ToJsonArray(s.OutTransactionIds),
                         ReturnIds = ToJsonArray(s.ReturnTransactionIds),
                         CreatedAt = createdAt,
@@ -236,7 +241,7 @@ public class LegacyImportService(DbConnectionFactory db)
                         Supplier = s.Supplier ?? "",
                         Note = s.Note ?? "",
                         Status = s.Status,
-                        Items = RemapSlipItems(s.Items, prodMap),
+                        Items = RemapSlipItems(s.Items, legacyIdToCode, codeToId),
                         InIds = ToJsonArray(s.InTransactionIds),
                         ReturnIds = ToJsonArray(s.ReturnTransactionIds),
                         CreatedAt = createdAt,
@@ -264,6 +269,117 @@ public class LegacyImportService(DbConnectionFactory db)
         {
             try { await tx.RollbackAsync(); } catch { /* transaction may already be aborted */ }
             return ServiceResult<ImportSummary>.Fail($"Import thất bại: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Sửa dữ liệu đã import sai: giữ sản phẩm/phiếu mới, chỉ cập nhật phiếu và giao dịch
+    /// trùng mã theo file JSON gốc. Map sản phẩm theo code, ngày theo giờ VN.
+    /// </summary>
+    public async Task<ServiceResult<RepairSummary>> RepairAsync(LegacyBackup backup, string email)
+    {
+        var normalized = Normalize(backup);
+        await using var conn = db.Create();
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        try
+        {
+            var codeToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in await conn.QueryAsync<(long Id, string Code)>("SELECT id, code FROM products", transaction: tx))
+            {
+                var code = (row.Code ?? "").Trim();
+                if (code.Length > 0 && !codeToId.ContainsKey(code))
+                    codeToId[code] = row.Id;
+            }
+
+            var legacyIdToCode = new Dictionary<int, string>();
+            foreach (var p in normalized.Products)
+            {
+                var code = (p.Code ?? "").Trim();
+                if (p.Id > 0 && code.Length > 0)
+                    legacyIdToCode[p.Id] = code;
+            }
+
+            var summary = new RepairSummary();
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var s in normalized.ExportSlips)
+            {
+                var id = await conn.ExecuteScalarAsync<long?>(
+                    "SELECT id FROM export_slips WHERE code = @Code", new { s.Code }, tx);
+                if (id is null)
+                {
+                    summary.SkippedSlips++;
+                    continue;
+                }
+
+                await conn.ExecuteAsync(
+                    @"UPDATE export_slips SET items = @Items::jsonb, slip_date = @SlipDate,
+                      updated_at = @Now, updated_by_email = @Email WHERE id = @Id",
+                    new
+                    {
+                        Items = RemapSlipItems(s.Items, legacyIdToCode, codeToId),
+                        SlipDate = ServiceHelpers.ParseLegacyDateTime(s.Date),
+                        Now = now,
+                        Email = email,
+                        Id = id.Value,
+                    }, tx);
+                summary.ExportSlipsUpdated++;
+            }
+
+            foreach (var s in normalized.ImportSlips)
+            {
+                var id = await conn.ExecuteScalarAsync<long?>(
+                    "SELECT id FROM import_slips WHERE code = @Code", new { s.Code }, tx);
+                if (id is null)
+                {
+                    summary.SkippedSlips++;
+                    continue;
+                }
+
+                await conn.ExecuteAsync(
+                    @"UPDATE import_slips SET items = @Items::jsonb, slip_date = @SlipDate,
+                      updated_at = @Now, updated_by_email = @Email WHERE id = @Id",
+                    new
+                    {
+                        Items = RemapSlipItems(s.Items, legacyIdToCode, codeToId),
+                        SlipDate = ServiceHelpers.ParseLegacyDateTime(s.Date),
+                        Now = now,
+                        Email = email,
+                        Id = id.Value,
+                    }, tx);
+                summary.ImportSlipsUpdated++;
+            }
+
+            foreach (var t in normalized.Transactions)
+            {
+                if (!TryResolveProductId(t.ProductId, null, legacyIdToCode, codeToId, out var productId))
+                {
+                    summary.SkippedTransactions++;
+                    continue;
+                }
+
+                var n = await conn.ExecuteAsync(
+                    @"UPDATE transactions SET product_id = @ProductId, movement_at = @MovementAt
+                      WHERE legacy_id = @LegacyId",
+                    new
+                    {
+                        ProductId = productId,
+                        MovementAt = ServiceHelpers.ParseLegacyDateTime(t.Date),
+                        LegacyId = t.Id,
+                    }, tx);
+                if (n > 0) summary.TransactionsUpdated++;
+                else summary.SkippedTransactions++;
+            }
+
+            await tx.CommitAsync();
+            return ServiceResult<RepairSummary>.Success(summary);
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(); } catch { /* already aborted */ }
+            return ServiceResult<RepairSummary>.Fail($"Sửa dữ liệu thất bại: {ex.Message}");
         }
     }
 
@@ -299,7 +415,25 @@ public class LegacyImportService(DbConnectionFactory db)
     private static DateTimeOffset ParseOptionalDate(string? value) =>
         string.IsNullOrWhiteSpace(value) ? DateTimeOffset.UtcNow : ServiceHelpers.ParseLegacyDateTime(value);
 
-    private static string RemapSlipItems(object? value, Dictionary<int, long> prodMap)
+    private static bool TryResolveProductId(
+        int legacyProductId,
+        string? productCode,
+        Dictionary<int, string> legacyIdToCode,
+        Dictionary<string, long> codeToId,
+        out long productId)
+    {
+        productId = 0;
+        var code = (productCode ?? "").Trim();
+        if (code.Length == 0 && legacyProductId > 0)
+            legacyIdToCode.TryGetValue(legacyProductId, out code);
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        return codeToId.TryGetValue(code.Trim(), out productId);
+    }
+
+    private static string RemapSlipItems(
+        object? value,
+        Dictionary<int, string> legacyIdToCode,
+        Dictionary<string, long> codeToId)
     {
         using var doc = JsonDocument.Parse(ToJsonArray(value));
         if (doc.RootElement.ValueKind != JsonValueKind.Array) return "[]";
@@ -307,10 +441,12 @@ public class LegacyImportService(DbConnectionFactory db)
         var list = new List<object>();
         foreach (var el in doc.RootElement.EnumerateArray())
         {
-            var pid = ReadInt(el, "productId", "ProductId");
+            var legacyPid = ReadInt(el, "productId", "ProductId");
+            var code = ReadString(el, "productCode", "ProductCode", "code", "Code");
             var qty = ReadDecimal(el, "quantity", "Quantity");
             var note = ReadString(el, "note", "Note");
-            var mapped = prodMap.TryGetValue(pid, out var id) ? id : pid;
+            if (!TryResolveProductId(legacyPid, code, legacyIdToCode, codeToId, out var mapped))
+                continue;
             list.Add(new { productId = mapped, quantity = qty, note });
         }
         return JsonSerializer.Serialize(list);
@@ -319,7 +455,12 @@ public class LegacyImportService(DbConnectionFactory db)
     private static int ReadInt(JsonElement el, params string[] names)
     {
         foreach (var n in names)
-            if (el.TryGetProperty(n, out var p) && p.TryGetInt32(out var v)) return v;
+        {
+            if (!el.TryGetProperty(n, out var p)) continue;
+            if (p.TryGetInt32(out var v)) return v;
+            if (p.ValueKind == JsonValueKind.String && int.TryParse(p.GetString(), out v)) return v;
+            if (p.TryGetInt64(out var l)) return (int)l;
+        }
         return 0;
     }
 

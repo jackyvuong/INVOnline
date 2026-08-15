@@ -333,6 +333,13 @@ public class SettingsController(SettingsService settings) : ControllerBase
         return result.Ok ? Ok(new { ok = true, summary = result.Data }) : BadRequest(result);
     }
 
+    [HttpPost("repair")]
+    public async Task<IActionResult> Repair([FromBody] System.Text.Json.JsonElement payload)
+    {
+        var result = await settings.RepairAsync(payload, User.GetUserEmail());
+        return result.Ok ? Ok(new { ok = true, summary = result.Data }) : BadRequest(result);
+    }
+
     [HttpPost("clear")]
     public async Task<IActionResult> Clear()
     {

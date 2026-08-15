@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, apiPaged, downloadCsv, nowDateTime, toApiDateTime } from '../api/client';
+import { api, downloadCsv, nowDateTime, toApiDateTime } from '../api/client';
 import { SlipStatusBadge } from '../components/Badge';
 import { useConfirm } from '../components/ConfirmProvider';
 import DataTable from '../components/DataTable';
@@ -112,7 +112,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   });
 
   const loadProducts = () =>
-    apiPaged<Product>('/products', { page: 1, pageSize: 50000 }).then((r) => setProducts(r.items));
+    api<Product[]>('/products/options').then(setProducts);
 
   useEffect(() => {
     loadProducts();
@@ -125,9 +125,11 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
 
   const resolveProductId = (rawId: number) => {
     if (!rawId) return 0;
-    if (productMap.has(rawId)) return rawId;
-    const byLegacy = products.find((p) => p.legacyId === rawId);
-    return byLegacy?.id || 0;
+    const byId = products.find((p) => p.id === rawId);
+    const byLegacy = products.find((p) => Number(p.legacyId) === rawId);
+    if (byId && Number(byId.legacyId) === rawId) return byId.id;
+    if (byLegacy) return byLegacy.id;
+    return byId?.id || 0;
   };
 
   const parseItems = (items: unknown): SlipItem[] => {

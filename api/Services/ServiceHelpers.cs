@@ -1,18 +1,63 @@
 namespace Inventory.Api.Services;
 
+using System.Globalization;
+using System.Text.RegularExpressions;
+
 public static class ServiceHelpers
 {
+    private static readonly TimeZoneInfo VietnamTz = ResolveVietnamTimeZone();
+    private static readonly string[] NaiveFormats =
+    [
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "dd-MM-yyyy HH:mm",
+        "dd/MM/yyyy HH:mm",
+        "yyyy-MM-dd",
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+    ];
+
+    private static TimeZoneInfo ResolveVietnamTimeZone()
+    {
+        foreach (var id in new[] { "Asia/Ho_Chi_Minh", "SE Asia Standard Time" })
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch (TimeZoneNotFoundException) { }
+            catch (InvalidTimeZoneException) { }
+        }
+        return TimeZoneInfo.CreateCustomTimeZone("VN", TimeSpan.FromHours(7), "Vietnam", "Vietnam");
+    }
+
+    private static bool HasExplicitOffset(string value)
+    {
+        var s = value.Trim();
+        if (s.EndsWith("Z", StringComparison.OrdinalIgnoreCase)) return true;
+        return Regex.IsMatch(s, @"[+-]\d{2}:?\d{2}$");
+    }
+
     public static DateTimeOffset ParseLegacyDateTime(string value)
     {
-        if (DateTimeOffset.TryParse(value, out var dto))
+        if (string.IsNullOrWhiteSpace(value)) return DateTimeOffset.UtcNow;
+        var s = value.Trim();
+
+        if (HasExplicitOffset(s) && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
             return dto.ToUniversalTime();
-        if (DateTime.TryParseExact(value, "yyyy-MM-dd HH:mm", null, System.Globalization.DateTimeStyles.AssumeLocal, out var dt))
-            return new DateTimeOffset(dt, TimeZoneInfo.Local.GetUtcOffset(dt)).ToUniversalTime();
+
+        if (DateTime.TryParseExact(s, NaiveFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)
+            || DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out dt))
+        {
+            var unspecified = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+            var offset = VietnamTz.GetUtcOffset(unspecified);
+            return new DateTimeOffset(unspecified, offset).ToUniversalTime();
+        }
+
         return DateTimeOffset.UtcNow;
     }
 
     public static string FormatLegacyDateTime(DateTimeOffset value) =>
-        value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        TimeZoneInfo.ConvertTime(value, VietnamTz).ToString("yyyy-MM-dd HH:mm");
 
     public static decimal StockDelta(string type, decimal qty) => type switch
     {

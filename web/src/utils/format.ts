@@ -41,10 +41,25 @@ export function formatDate(value: unknown): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-/** UI datetime: DD-MM-YYYY HH:mm */
+/** UI datetime: DD-MM-YYYY HH:mm (Asia/Ho_Chi_Minh) */
 export function formatDateTime(value: unknown): string {
-  const d = parseDateTime(value);
-  if (!d) return value == null || value === '' ? '' : String(value);
+  const s = value == null ? '' : String(value).trim();
+  if (!s) return '';
+  const d = parseDateTime(s);
+  if (!d) return s;
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
+    return `${get('day')}-${get('month')}-${get('year')} ${get('hour')}:${get('minute')}`;
+  }
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 

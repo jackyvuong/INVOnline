@@ -56,6 +56,15 @@ public class SettingsService(DbConnectionFactory db, LegacyImportService legacyI
         return legacyImport.ImportAsync(backup, email);
     }
 
+    public Task<ServiceResult<RepairSummary>> RepairAsync(JsonElement payload, string email)
+    {
+        var backup = LegacyImportService.TryParse(payload, out var parseError);
+        if (backup is null)
+            return Task.FromResult(ServiceResult<RepairSummary>.Fail(parseError ?? "File JSON không hợp lệ."));
+
+        return legacyImport.RepairAsync(backup, email);
+    }
+
     public async Task<ServiceResult> ClearAllAsync(string email)
     {
         await using var conn = db.Create();

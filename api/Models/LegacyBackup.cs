@@ -88,3 +88,12 @@ public class ImportSummary
     public string? SourceVersion { get; set; }
     public string? ExportedAt { get; set; }
 }
+
+public class RepairSummary
+{
+    public int ExportSlipsUpdated { get; set; }
+    public int ImportSlipsUpdated { get; set; }
+    public int TransactionsUpdated { get; set; }
+    public int SkippedSlips { get; set; }
+    public int SkippedTransactions { get; set; }
+}

@@ -31,8 +31,10 @@ function formatWhen(iso?: string | null) {
 
 export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const repairRef = useRef<HTMLInputElement>(null);
   const { confirmDialog } = useConfirm();
   const [importing, setImporting] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [userOpen, setUserOpen] = useState(false);
@@ -87,6 +89,42 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRepair = async (file: File) => {
+    let text: string;
+    let parsed: { products: number; transactions: number };
+    try {
+      text = await file.text();
+      parsed = previewLegacyJson(text);
+    } catch (err: unknown) {
+      notify.error((err as { message?: string }).message || 'File JSON không hợp lệ.');
+      return;
+    }
+
+    const ok = await confirmDialog({
+      title: 'Sửa lệch import (không xóa dữ liệu mới)',
+      message: `File "${file.name}" — ${parsed.products} sản phẩm, ${parsed.transactions} giao dịch.\n\nChỉ sửa phiếu/giao dịch trùng mã: map lại sản phẩm theo mã, chỉnh ngày giờ VN. Không xóa sản phẩm hay phiếu tạo sau này. Tiếp tục?`,
+      confirmText: 'Sửa dữ liệu',
+      danger: false,
+    });
+    if (!ok) return;
+
+    setRepairing(true);
+    try {
+      const result = await api<{ summary?: { exportSlipsUpdated?: number; importSlipsUpdated?: number; transactionsUpdated?: number } }>(
+        '/settings/repair',
+        { method: 'POST', body: text },
+      );
+      const s = result.summary;
+      notify.success(
+        `Đã sửa ${s?.exportSlipsUpdated ?? 0} phiếu xuất, ${s?.importSlipsUpdated ?? 0} phiếu nhập, ${s?.transactionsUpdated ?? 0} giao dịch.`,
+      );
+    } catch (err: unknown) {
+      notify.error((err as { message?: string }).message || 'Sửa dữ liệu thất bại.');
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const saveUser = async () => {
     try {
       await api('/users', {
@@ -125,13 +163,14 @@ export default function SettingsPage() {
     <>
       <Panel title="Sao lưu dữ liệu">
         <p className="field-hint">
-          Export tải file JSON về máy để backup. Import dùng file này (hoặc file từ app cũ) để khôi phục — sẽ ghi đè toàn bộ dữ liệu hiện tại.
+          Export tải file JSON về máy để backup. Import ghi đè toàn bộ dữ liệu.
+          Nếu prod đã import lệch (sai sản phẩm / lệch giờ), dùng <strong>Sửa lệch import</strong> với file JSON hệ thống cũ — không xóa phiếu hay sản phẩm tạo sau này.
         </p>
         <div className="toolbar toolbar--compact">
           <button
             type="button"
             className="btn btn--primary"
-            disabled={exporting || importing}
+            disabled={exporting || importing || repairing}
             onClick={handleExport}
           >
             {exporting ? 'Đang export...' : 'Export JSON'}
@@ -139,10 +178,18 @@ export default function SettingsPage() {
           <button
             type="button"
             className="btn btn--ghost"
-            disabled={importing || exporting}
+            disabled={importing || exporting || repairing}
             onClick={() => fileRef.current?.click()}
           >
             {importing ? 'Đang import...' : 'Import JSON'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={importing || exporting || repairing}
+            onClick={() => repairRef.current?.click()}
+          >
+            {repairing ? 'Đang sửa...' : 'Sửa lệch import'}
           </button>
           <input
             ref={fileRef}
@@ -153,6 +200,17 @@ export default function SettingsPage() {
               const f = e.target.files?.[0];
               e.target.value = '';
               if (f) await handleImport(f);
+            }}
+          />
+          <input
+            ref={repairRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) await handleRepair(f);
             }}
           />
         </div>
