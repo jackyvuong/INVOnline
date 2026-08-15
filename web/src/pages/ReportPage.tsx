@@ -80,22 +80,22 @@ export default function ReportPage() {
       </div>
 
       <form
-        className="toolbar"
+        className="report-filters"
         onSubmit={(e) => { e.preventDefault(); run(true); }}
       >
-        <div className="field" style={{ margin: 0 }}>
-          <label>Từ ngày
-            <DateInput id="report-from" title="Từ ngày" value={from} onChange={setFrom} />
-          </label>
+        <div className="field">
+          <label htmlFor="report-from">Từ ngày</label>
+          <DateInput id="report-from" title="Từ ngày" value={from} onChange={setFrom} />
           {errors.fromDate && <span className="field-error">{errors.fromDate}</span>}
         </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Đến ngày
-            <DateInput id="report-to" title="Đến ngày" value={to} onChange={setTo} />
-          </label>
+        <div className="field">
+          <label htmlFor="report-to">Đến ngày</label>
+          <DateInput id="report-to" title="Đến ngày" value={to} onChange={setTo} />
           {errors.toDate && <span className="field-error">{errors.toDate}</span>}
         </div>
-        <button type="submit" className="btn btn--primary">Xem báo cáo</button>
+        <div className="report-filters__action">
+          <button type="submit" className="btn btn--primary">Xem báo cáo</button>
+        </div>
       </form>
 
       <div className="toolbar">

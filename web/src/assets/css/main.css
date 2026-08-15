@@ -429,7 +429,7 @@ img {
   margin-bottom: 6px;
 }
 
-.field input:not([type="checkbox"]):not([type="radio"]),
+.field input:not([type="checkbox"]):not([type="radio"]):not(.date-input__native),
 .field select,
 .field textarea,
 .input,
@@ -460,7 +460,7 @@ img {
   resize: vertical;
 }
 
-.field input:focus,
+.field input:not(.date-input__native):focus,
 .field select:focus,
 .field textarea:focus,
 .input:focus,
@@ -770,35 +770,44 @@ img {
 
 .date-input {
   position: relative;
-  display: inline-block;
-  width: 148px;
+  display: block;
+  width: 170px;
   flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.field .date-input {
+  width: 170px;
 }
 
 .date-input .input {
   width: 100%;
-  padding-right: 34px;
+  padding-right: 36px;
 }
 
 .date-input__native {
   position: absolute;
-  right: 6px;
+  right: 4px;
   top: 50%;
   transform: translateY(-50%);
   width: 28px;
   height: 28px;
+  margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: transparent;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .date-input__native::-webkit-calendar-picker-indicator {
   cursor: pointer;
   width: 18px;
   height: 18px;
-  opacity: 0.7;
+  margin: 0;
+  opacity: 0.65;
 }
 
 .report-filters__action {
