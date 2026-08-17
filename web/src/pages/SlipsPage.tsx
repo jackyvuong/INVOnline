@@ -445,7 +445,15 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
         </div>
 
         <div className="slip-lines">
-          <table className="table table--compact">
+          <table className="table table--compact slip-lines__table">
+            <colgroup>
+              <col className="slip-col-product" />
+              <col className="slip-col-brand" />
+              <col className="slip-col-stock" />
+              <col className="slip-col-qty" />
+              <col className="slip-col-note" />
+              {canEdit ? <col className="slip-col-act" /> : null}
+            </colgroup>
             <thead>
               <tr>
                 <th>Sản phẩm</th>
@@ -462,7 +470,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
                 const p = productMap.get(productId);
                 return (
                   <tr key={idx}>
-                    <td>
+                    <td className="slip-col-product">
                       <SelectAutocomplete
                         disabled={!canEdit}
                         value={productId ? String(productId) : ''}
@@ -479,7 +487,7 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
                     </td>
                     <td>{p?.brand || '—'}</td>
                     <td className="text-right mono">{p ? `${formatNumber(p.stock)} ${p.unit}` : '—'}</td>
-                    <td>
+                    <td className="slip-col-qty">
                       <input type="number" className="input" min={1} step={1} disabled={!canEdit} value={item.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} />
                     </td>
                     <td>

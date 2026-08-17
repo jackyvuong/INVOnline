@@ -1024,7 +1024,7 @@ img {
 }
 
 .modal__panel--lg {
-  width: min(920px, 100%);
+  width: min(1100px, 100%);
   max-height: min(92vh, 900px);
 }
 
@@ -1059,6 +1059,36 @@ input[readonly].input--readonly {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
+}
+
+.slip-lines__table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.slip-lines__table .slip-col-product { width: 44%; }
+.slip-lines__table .slip-col-brand { width: 12%; }
+.slip-lines__table .slip-col-stock { width: 11%; }
+.slip-lines__table .slip-col-qty { width: 122px; min-width: 122px; }
+.slip-lines__table .slip-col-note { width: 16%; }
+.slip-lines__table .slip-col-act { width: 44px; }
+
+.slip-lines__table .autocomplete {
+  width: 100%;
+  min-width: 0;
+}
+
+.slip-lines__table .slip-col-product .autocomplete__input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slip-lines__table .slip-col-qty .input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 6px;
 }
 
 .slip-lines__table .select,
