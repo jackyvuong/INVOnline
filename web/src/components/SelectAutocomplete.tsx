@@ -48,7 +48,13 @@ export default function SelectAutocomplete({
 
   const filtered = useMemo(() => {
     const q = open ? query : '';
-    return options.filter((o) => matches(o.label, q) || matches(o.value, q));
+    const numericQuery = /^\d+$/.test(q.trim());
+    return options.filter((o) => {
+      if (!q) return true;
+      if (matches(o.label, q)) return true;
+      if (numericQuery && o.value === q.trim()) return true;
+      return false;
+    });
   }, [options, open, query]);
 
   const positionList = () => {
@@ -151,7 +157,14 @@ export default function SelectAutocomplete({
           }
           if (e.key === 'Enter' && open) {
             e.preventDefault();
-            const item = filtered[activeIndex];
+            const q = normalizeSearch(query);
+            const exact = q
+              ? filtered.find((o) => {
+                  const label = normalizeSearch(o.label);
+                  return label === q || label.startsWith(`${q} —`) || label.startsWith(`${q} -`);
+                })
+              : undefined;
+            const item = exact || filtered[activeIndex] || filtered.find((o) => o.value) || filtered[0];
             if (item) pick(item.value);
             return;
           }

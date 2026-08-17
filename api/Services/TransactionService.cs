@@ -141,9 +141,7 @@ public class TransactionService(DbConnectionFactory db, ProductService products)
     {
         var product = await conn.QuerySingleOrDefaultAsync<Product>(
             @"SELECT id AS Id, stock AS Stock FROM products
-              WHERE id = @Id OR legacy_id = @Id
-              ORDER BY CASE WHEN id = @Id THEN 0 ELSE 1 END
-              LIMIT 1
+              WHERE id = @Id
               FOR UPDATE", new { Id = productId }, tx);
         if (product is null) return ServiceResult<int>.Fail("Không tìm thấy sản phẩm.");
         productId = product.Id;

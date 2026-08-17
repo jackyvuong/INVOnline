@@ -126,10 +126,9 @@ function SlipFormPage({ config }: { config: SlipConfig }) {
   const resolveProductId = (rawId: number) => {
     if (!rawId) return 0;
     const byId = products.find((p) => p.id === rawId);
+    if (byId) return byId.id;
     const byLegacy = products.find((p) => Number(p.legacyId) === rawId);
-    if (byId && Number(byId.legacyId) === rawId) return byId.id;
-    if (byLegacy) return byLegacy.id;
-    return byId?.id || 0;
+    return byLegacy?.id || 0;
   };
 
   const parseItems = (items: unknown): SlipItem[] => {
