@@ -161,6 +161,7 @@ export default function SettingsPage() {
 
   return (
     <>
+      {false && (
       <Panel title="Sao lưu dữ liệu">
         <p className="field-hint">
           Export tải file JSON về máy để backup. Import ghi đè toàn bộ dữ liệu.
@@ -215,6 +216,7 @@ export default function SettingsPage() {
           />
         </div>
       </Panel>
+      )}
 
       <Panel title="Quản lý user đăng nhập">
         <p className="field-hint">Thêm email Google được phép đăng nhập hệ thống. User lần đầu login sẽ tự liên kết tài khoản Google.</p>
